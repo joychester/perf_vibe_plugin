@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Page Performance Tracker",
+  "version": "1.0.0",
+  "description": "Track and display page performance metrics in the top-right corner",
+  "permissions": [
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_start"
+    }
+  ]
+}
+
