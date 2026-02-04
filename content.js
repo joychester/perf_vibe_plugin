@@ -4,12 +4,14 @@
 
   // State management
   let currentMode = 'page-load'; // 'page-load' or 'navigation'
+  let isDarkMode = false; // Theme state
   let navigationCount = 0;
   let navigationStartTime = null;
   let isTrackingNavigation = false;
   
   // Metrics storage
   let pageLoadMetrics = {
+    'ttfb': null,
     'dom-ready': null,
     'load-complete': null,
     'first-paint': null,
@@ -21,6 +23,7 @@
     'last-pixel-change': null
   };
   let navigationMetrics = {
+    'ttfb': null,
     'dom-ready': null,
     'load-complete': null,
     'first-paint': null,
@@ -40,20 +43,91 @@
   let clsValue = 0;
   let longTasks = [];
 
+  // Timeline zoom and pan state
+  let timelineZoom = {
+    level: 1,           // 1 = no zoom, higher = zoomed in
+    panOffset: 0,       // horizontal pan offset in pixels
+    isDragging: false,
+    isSelecting: false,
+    dragStartX: 0,
+    selectionStart: 0,
+    selectionEnd: 0
+  };
+
+  // Maximum tracking duration (8 seconds) - ignore metrics above this
+  const MAX_METRIC_DURATION = 8000;
+
+  // Change history tracking
+  const changeHistory = [];
+  const MAX_HISTORY_ITEMS = 50;
+  const STABLE_STATE_THRESHOLD = 500; // ms without changes to be considered stable
+  let lastChangeTimestamp = 0;
+  let stableStateTimer = null;
+  let highlightedElement = null;
+  let highlightOverlay = null;
+
+  // LCP candidates history tracking
+  const lcpCandidates = [];
+  let lcpHighlightOverlay = null;
+
+  // Performance thresholds for color coding (in ms)
+  // Based on Web Vitals recommendations
+  const performanceThresholds = {
+    'ttfb': { good: 800, needsImprovement: 1800 },
+    'fcp': { good: 1800, needsImprovement: 3000 },
+    'lcp': { good: 2500, needsImprovement: 4000 },
+    'tti': { good: 3800, needsImprovement: 7300 },
+    'tbt': { good: 200, needsImprovement: 600 },
+    'cls': { good: 0.1, needsImprovement: 0.25 },
+    'dom-ready': { good: 1500, needsImprovement: 3000 },
+    'load-complete': { good: 3000, needsImprovement: 6000 },
+    'first-paint': { good: 1000, needsImprovement: 2500 },
+    'last-pixel-change': { good: 3500, needsImprovement: 6000 }
+  };
+
+  // Get performance rating color
+  function getPerformanceColor(metricKey, value) {
+    const thresholds = performanceThresholds[metricKey];
+    if (!thresholds) return '#6b7280'; // gray for unknown
+
+    if (value <= thresholds.good) {
+      return '#10b981'; // green - good
+    } else if (value <= thresholds.needsImprovement) {
+      return '#f59e0b'; // yellow/orange - needs improvement
+    } else {
+      return '#ef4444'; // red - poor
+    }
+  }
+
+  // Get performance rating label
+  function getPerformanceRating(metricKey, value) {
+    const thresholds = performanceThresholds[metricKey];
+    if (!thresholds) return '';
+
+    if (value <= thresholds.good) {
+      return 'good';
+    } else if (value <= thresholds.needsImprovement) {
+      return 'needs-improvement';
+    } else {
+      return 'poor';
+    }
+  }
+
   // Create the widget container
   const widget = document.createElement('div');
   widget.id = 'performance-tracker-widget';
   widget.innerHTML = `
     <div class="widget-header">
       <div class="header-left">
-        <span>⚡ Performance</span>
+        <span class="widget-title"><span class="drag-hint">⋮⋮</span> ⚡ perf-vibe</span>
         <div class="mode-indicator" id="mode-indicator">
           <span class="mode-badge" id="mode-badge">Page Load</span>
           <span class="nav-count" id="nav-count"></span>
         </div>
       </div>
       <div class="header-right">
-        <button id="mode-toggle" class="mode-toggle-btn" title="Switch between Page Load and Navigation metrics">🔄</button>
+        <button id="mode-toggle" class="mode-toggle-btn" title="Switch between Page Load and Navigation metrics">⇆</button>
+        <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark/light mode">🌙</button>
         <button id="toggle-widget" class="toggle-btn">−</button>
       </div>
     </div>
@@ -61,13 +135,24 @@
       <div class="timeline-section">
         <div class="timeline-header">
           <span class="timeline-title">Loading Timeline</span>
-          <button id="toggle-timeline" class="toggle-timeline-btn" title="Toggle timeline">▼</button>
+          <div class="timeline-controls">
+            <span class="zoom-level" id="zoom-level">1x</span>
+            <button id="zoom-reset" class="zoom-btn" title="Reset zoom">⟲</button>
+            <button id="toggle-timeline" class="toggle-timeline-btn" title="Toggle timeline">▼</button>
+          </div>
         </div>
         <div class="timeline-container" id="timeline-container">
-          <div class="timeline-chart" id="timeline-chart"></div>
+          <div class="timeline-chart" id="timeline-chart">
+            <div class="timeline-selection" id="timeline-selection"></div>
+          </div>
+          <div class="timeline-hint" id="timeline-hint">Drag to zoom • Scroll to pan • Double-click to reset</div>
         </div>
       </div>
       <div class="metrics-section">
+        <div class="metric">
+          <span class="metric-label"><span class="metric-color-indicator" data-metric="ttfb"></span>Time to First Byte:</span>
+          <span class="metric-value" id="ttfb">-</span>
+        </div>
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="first-paint"></span>First Paint:</span>
           <span class="metric-value" id="first-paint">-</span>
@@ -83,6 +168,20 @@
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="lcp"></span>Largest Contentful Paint:</span>
           <span class="metric-value" id="lcp">-</span>
+        </div>
+        <div class="lcp-history-section">
+          <div class="lcp-history-header">
+            <span class="lcp-history-title">LCP Candidates</span>
+            <div class="lcp-history-controls">
+              <span class="lcp-count" id="lcp-count">0</span>
+              <button id="toggle-lcp-history" class="toggle-lcp-btn" title="Toggle LCP history">▼</button>
+            </div>
+          </div>
+          <div class="lcp-history-container" id="lcp-history-container">
+            <div class="lcp-history-list" id="lcp-history-list">
+              <div class="lcp-history-empty">No LCP candidates detected yet</div>
+            </div>
+          </div>
         </div>
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="load-complete"></span>Load Complete:</span>
@@ -103,6 +202,20 @@
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="last-pixel-change"></span>Last Pixel Change:</span>
           <span class="metric-value" id="last-pixel-change">-</span>
+        </div>
+      </div>
+      <div class="change-history-section">
+        <div class="change-history-header">
+          <span class="change-history-title">Visual Changes</span>
+          <div class="change-history-controls">
+            <span class="stable-indicator" id="stable-indicator" title="Page stability status"></span>
+            <button id="toggle-history" class="toggle-history-btn" title="Toggle history">▼</button>
+          </div>
+        </div>
+        <div class="change-history-container" id="change-history-container">
+          <div class="change-history-list" id="change-history-list">
+            <div class="change-history-empty">No visual changes detected yet</div>
+          </div>
         </div>
       </div>
     </div>
@@ -134,6 +247,34 @@
       toggleBtn.textContent = isCollapsed ? '+' : '−';
     });
 
+    // Theme toggle (dark/light mode)
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      // Load saved theme preference
+      const savedTheme = localStorage.getItem('perf-vibe-theme');
+      if (savedTheme === 'dark') {
+        isDarkMode = true;
+        widget.classList.add('dark-mode');
+        themeToggle.textContent = '☀️';
+        themeToggle.title = 'Switch to light mode';
+      }
+
+      themeToggle.addEventListener('click', () => {
+        isDarkMode = !isDarkMode;
+        if (isDarkMode) {
+          widget.classList.add('dark-mode');
+          themeToggle.textContent = '☀️';
+          themeToggle.title = 'Switch to light mode';
+          localStorage.setItem('perf-vibe-theme', 'dark');
+        } else {
+          widget.classList.remove('dark-mode');
+          themeToggle.textContent = '🌙';
+          themeToggle.title = 'Switch to dark mode';
+          localStorage.setItem('perf-vibe-theme', 'light');
+        }
+      });
+    }
+
     modeToggle.addEventListener('click', () => {
       currentMode = currentMode === 'page-load' ? 'navigation' : 'page-load';
       updateModeDisplay();
@@ -157,7 +298,753 @@
       timelineContainer.style.display = isTimelineCollapsed ? 'none' : 'block';
       toggleTimeline.textContent = isTimelineCollapsed ? '▶' : '▼';
     });
+
+    // Zoom reset button
+    const zoomReset = document.getElementById('zoom-reset');
+    if (zoomReset) {
+      zoomReset.addEventListener('click', () => {
+        resetTimelineZoom();
+      });
+    }
+
+    // Setup timeline interaction handlers
+    setupTimelineInteractions();
+
+    // LCP history controls
+    const toggleLcpHistory = document.getElementById('toggle-lcp-history');
+    const lcpHistoryContainer = document.getElementById('lcp-history-container');
+    let isLcpHistoryCollapsed = false;
+
+    if (toggleLcpHistory && lcpHistoryContainer) {
+      toggleLcpHistory.addEventListener('click', () => {
+        isLcpHistoryCollapsed = !isLcpHistoryCollapsed;
+        lcpHistoryContainer.style.display = isLcpHistoryCollapsed ? 'none' : 'block';
+        toggleLcpHistory.textContent = isLcpHistoryCollapsed ? '▶' : '▼';
+      });
+    }
+
+    // Change history controls
+    const toggleHistory = document.getElementById('toggle-history');
+    const historyContainer = document.getElementById('change-history-container');
+    let isHistoryCollapsed = false;
+
+    if (toggleHistory && historyContainer) {
+      toggleHistory.addEventListener('click', () => {
+        isHistoryCollapsed = !isHistoryCollapsed;
+        historyContainer.style.display = isHistoryCollapsed ? 'none' : 'block';
+        toggleHistory.textContent = isHistoryCollapsed ? '▶' : '▼';
+      });
+    }
+
+    // Make widget draggable
+    setupDraggable();
   }
+
+  // Setup draggable widget functionality
+  function setupDraggable() {
+    const widgetHeader = widget.querySelector('.widget-header');
+    if (!widgetHeader) return;
+
+    let isDragging = false;
+    let startX, startY;
+    let startLeft, startTop;
+
+    widgetHeader.addEventListener('mousedown', (e) => {
+      // Don't start drag if clicking on buttons
+      if (e.target.tagName === 'BUTTON') return;
+
+      isDragging = true;
+      widget.classList.add('dragging');
+
+      // Get current position
+      const rect = widget.getBoundingClientRect();
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = rect.left;
+      startTop = rect.top;
+
+      // Switch to left/top positioning for dragging
+      widget.style.right = 'auto';
+      widget.style.left = startLeft + 'px';
+      widget.style.top = startTop + 'px';
+
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+
+      let newLeft = startLeft + deltaX;
+      let newTop = startTop + deltaY;
+
+      // Keep widget within viewport bounds
+      const maxLeft = window.innerWidth - widget.offsetWidth;
+      const maxTop = window.innerHeight - widget.offsetHeight;
+
+      newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+      newTop = Math.max(0, Math.min(newTop, maxTop));
+
+      widget.style.left = newLeft + 'px';
+      widget.style.top = newTop + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        widget.classList.remove('dragging');
+      }
+    });
+
+    // Handle window resize to keep widget in bounds
+    window.addEventListener('resize', () => {
+      const rect = widget.getBoundingClientRect();
+      const maxLeft = window.innerWidth - widget.offsetWidth;
+      const maxTop = window.innerHeight - widget.offsetHeight;
+
+      if (rect.left > maxLeft) {
+        widget.style.left = Math.max(0, maxLeft) + 'px';
+      }
+      if (rect.top > maxTop) {
+        widget.style.top = Math.max(0, maxTop) + 'px';
+      }
+    });
+  }
+
+  // Setup timeline mouse interactions for zoom and pan
+  function setupTimelineInteractions() {
+    const timelineChart = document.getElementById('timeline-chart');
+    if (!timelineChart) return;
+
+    let isDragging = false;
+    let isPanning = false;
+    let startX = 0;
+    let startPanOffset = 0;
+
+    // Get mouse position relative to chart
+    function getMouseX(e) {
+      const rect = timelineChart.getBoundingClientRect();
+      return e.clientX - rect.left;
+    }
+
+    // Mouse down - start drag selection or pan
+    timelineChart.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // Only left click
+
+      const mouseX = getMouseX(e);
+      startX = mouseX;
+
+      if (e.shiftKey || timelineZoom.level > 1) {
+        // Pan mode when shift is held or already zoomed
+        isPanning = true;
+        startPanOffset = timelineZoom.panOffset;
+        timelineChart.style.cursor = 'grabbing';
+      } else {
+        // Selection mode for zoom
+        isDragging = true;
+        timelineZoom.selectionStart = mouseX;
+        timelineZoom.selectionEnd = mouseX;
+
+        const selection = document.getElementById('timeline-selection');
+        if (selection) {
+          selection.style.display = 'block';
+          selection.style.left = `${mouseX}px`;
+          selection.style.width = '0px';
+        }
+      }
+
+      e.preventDefault();
+    });
+
+    // Mouse move - update selection or pan
+    timelineChart.addEventListener('mousemove', (e) => {
+      const mouseX = getMouseX(e);
+
+      if (isDragging) {
+        timelineZoom.selectionEnd = mouseX;
+        const selection = document.getElementById('timeline-selection');
+        if (selection) {
+          const left = Math.min(timelineZoom.selectionStart, mouseX);
+          const width = Math.abs(mouseX - timelineZoom.selectionStart);
+          selection.style.left = `${left}px`;
+          selection.style.width = `${width}px`;
+        }
+      } else if (isPanning) {
+        const deltaX = startX - mouseX;
+        const maxPan = 280 * timelineZoom.level - 280;
+        timelineZoom.panOffset = Math.max(0, Math.min(startPanOffset + deltaX * timelineZoom.level, maxPan));
+        renderTimeline();
+      }
+    });
+
+    // Mouse up - finish drag selection or pan
+    const handleMouseUp = () => {
+      if (isDragging) {
+        isDragging = false;
+        const selection = document.getElementById('timeline-selection');
+        if (selection) {
+          selection.style.display = 'none';
+        }
+
+        // Zoom to selection if large enough
+        const selectionWidth = Math.abs(timelineZoom.selectionEnd - timelineZoom.selectionStart);
+        if (selectionWidth > 10) {
+          zoomToSelection(timelineZoom.selectionStart, timelineZoom.selectionEnd, 280);
+        }
+      }
+
+      if (isPanning) {
+        isPanning = false;
+        timelineChart.style.cursor = 'crosshair';
+      }
+    };
+
+    timelineChart.addEventListener('mouseup', handleMouseUp);
+    timelineChart.addEventListener('mouseleave', handleMouseUp);
+
+    // Double click to reset zoom
+    timelineChart.addEventListener('dblclick', () => {
+      resetTimelineZoom();
+    });
+
+    // Mouse wheel for pan (when zoomed) or zoom
+    timelineChart.addEventListener('wheel', (e) => {
+      e.preventDefault();
+
+      if (e.ctrlKey || e.metaKey) {
+        // Zoom with ctrl/cmd + scroll
+        const zoomDelta = e.deltaY > 0 ? 0.8 : 1.25;
+        const newZoom = Math.max(1, Math.min(timelineZoom.level * zoomDelta, 20));
+
+        // Zoom towards mouse position
+        const mouseX = getMouseX(e);
+        const mouseTimeRatio = (timelineZoom.panOffset + mouseX) / (280 * timelineZoom.level);
+
+        timelineZoom.level = newZoom;
+        timelineZoom.panOffset = Math.max(0, mouseTimeRatio * (280 * newZoom) - mouseX);
+
+        renderTimeline();
+      } else if (timelineZoom.level > 1) {
+        // Pan with scroll when zoomed
+        const maxPan = 280 * timelineZoom.level - 280;
+        timelineZoom.panOffset = Math.max(0, Math.min(timelineZoom.panOffset + e.deltaX + e.deltaY, maxPan));
+        renderTimeline();
+      }
+    }, { passive: false });
+
+    // Set initial cursor
+    timelineChart.style.cursor = 'crosshair';
+  }
+
+  // ========== CHANGE HISTORY TRACKING ==========
+
+  // Get a descriptive selector for an element
+  function getElementSelector(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return 'unknown';
+
+    const tag = element.tagName.toLowerCase();
+    let selector = tag;
+
+    if (element.id) {
+      selector = `#${element.id}`;
+    } else if (element.className && typeof element.className === 'string') {
+      const classes = element.className.trim().split(/\s+/).slice(0, 2).join('.');
+      if (classes) selector = `${tag}.${classes}`;
+    }
+
+    // Add position info if there are siblings
+    const parent = element.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter(c => c.tagName === element.tagName);
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(element) + 1;
+        selector += `:nth-of-type(${index})`;
+      }
+    }
+
+    return selector.substring(0, 40); // Truncate for display
+  }
+
+  // Get change type description
+  function getChangeType(mutation) {
+    if (mutation.type === 'childList') {
+      if (mutation.addedNodes.length > 0) return 'added';
+      if (mutation.removedNodes.length > 0) return 'removed';
+    }
+    if (mutation.type === 'attributes') return 'style';
+    if (mutation.type === 'characterData') return 'text';
+    return 'changed';
+  }
+
+  // Record a visual change
+  function recordVisualChange(element, changeType, timestamp) {
+    if (!element) return;
+
+    // Don't track changes after 8 seconds
+    if (timestamp > MAX_METRIC_DURATION) {
+      return;
+    }
+
+    // Exclude plugin's own elements (highlight overlay, widget, etc.)
+    if (shouldIgnoreMutation(element)) {
+      return;
+    }
+
+    const entry = {
+      id: Date.now() + Math.random(),
+      timestamp: timestamp,
+      element: element,
+      selector: getElementSelector(element),
+      type: changeType,
+      tagName: element.tagName ? element.tagName.toLowerCase() : 'text'
+    };
+
+    changeHistory.unshift(entry);
+
+    // Limit history size
+    if (changeHistory.length > MAX_HISTORY_ITEMS) {
+      changeHistory.pop();
+    }
+
+    // Update last change timestamp and stable state
+    lastChangeTimestamp = timestamp;
+    updateStableState(false);
+
+    // Reset stable state timer
+    if (stableStateTimer) {
+      clearTimeout(stableStateTimer);
+    }
+    stableStateTimer = setTimeout(() => {
+      updateStableState(true);
+    }, STABLE_STATE_THRESHOLD);
+
+    // Update the UI
+    renderChangeHistory();
+  }
+
+  // Update stable state indicator
+  function updateStableState(isStable) {
+    const indicator = document.getElementById('stable-indicator');
+    if (indicator) {
+      if (isStable) {
+        indicator.className = 'stable-indicator stable';
+        indicator.title = 'Page is visually stable';
+      } else {
+        indicator.className = 'stable-indicator changing';
+        indicator.title = 'Visual changes detected';
+      }
+    }
+  }
+
+  // Render the change history list
+  function renderChangeHistory() {
+    const listEl = document.getElementById('change-history-list');
+    if (!listEl) return;
+
+    if (changeHistory.length === 0) {
+      listEl.innerHTML = '<div class="change-history-empty">No visual changes detected yet</div>';
+      return;
+    }
+
+    // Deduplicate changes at the same time (within 50ms threshold)
+    // Prefer non-"removed" changes when there are multiple at same time
+    const TIME_GROUP_THRESHOLD = 50;
+    const deduplicatedChanges = [];
+    const sortedChanges = [...changeHistory].sort((a, b) => a.timestamp - b.timestamp);
+
+    sortedChanges.forEach(change => {
+      // Find existing group within threshold
+      const existingGroup = deduplicatedChanges.find(g =>
+        Math.abs(g.timestamp - change.timestamp) <= TIME_GROUP_THRESHOLD
+      );
+
+      if (existingGroup) {
+        // If current is not 'removed' and existing is 'removed', replace it
+        if (change.type !== 'removed' && existingGroup.type === 'removed') {
+          existingGroup.entry = change;
+          existingGroup.type = change.type;
+          existingGroup.timestamp = change.timestamp;
+        }
+        // Otherwise keep the existing one (first non-removed wins)
+      } else {
+        deduplicatedChanges.push({
+          timestamp: change.timestamp,
+          type: change.type,
+          entry: change
+        });
+      }
+    });
+
+    // Sort by timestamp ascending for eye icon logic, then reverse for display
+    const sortedByTimeAsc = [...deduplicatedChanges].sort((a, b) => a.timestamp - b.timestamp);
+
+    // Get LPC time for eye icon logic
+    const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
+    const lpcTime = metrics['last-pixel-change'];
+    const EYE_THRESHOLD = 500; // 500ms threshold for showing eye icon
+
+    // Find the entry that matches or is closest to the LPC timestamp
+    // Note: LPC timestamp is set ~300ms AFTER the actual last change (due to inactivity threshold)
+    // So we need to look for changes around lpcTime - 300ms
+    const INACTIVITY_OFFSET = 300;
+    let lpcEntryId = null;
+    if (lpcTime !== null && lpcTime !== undefined && sortedByTimeAsc.length > 0) {
+      const adjustedLpcTime = lpcTime - INACTIVITY_OFFSET;
+
+      // Find the change closest to the adjusted LPC time (within 150ms tolerance)
+      let closestDiff = Infinity;
+      sortedByTimeAsc.forEach(group => {
+        const diff = Math.abs(group.timestamp - adjustedLpcTime);
+        if (diff < closestDiff && diff <= 150) {
+          closestDiff = diff;
+          lpcEntryId = group.entry.id;
+        }
+      });
+
+      // If no close match to adjusted time, try matching directly to LPC time
+      if (lpcEntryId === null) {
+        sortedByTimeAsc.forEach(group => {
+          const diff = Math.abs(group.timestamp - lpcTime);
+          if (diff < closestDiff && diff <= 150) {
+            closestDiff = diff;
+            lpcEntryId = group.entry.id;
+          }
+        });
+      }
+
+      // If still no match, use the last change before or at LPC time
+      if (lpcEntryId === null && sortedByTimeAsc.length > 0) {
+        // Just use the most recent change (last in sorted ascending order)
+        lpcEntryId = sortedByTimeAsc[sortedByTimeAsc.length - 1].entry.id;
+      }
+    }
+
+    // Determine which items should show the eye icon
+    const itemsWithEye = new Set();
+    sortedByTimeAsc.forEach((group, index) => {
+      let hasChangeWithin500ms = false;
+
+      // Check if any subsequent change is within 500ms
+      for (let i = index + 1; i < sortedByTimeAsc.length; i++) {
+        if (sortedByTimeAsc[i].timestamp - group.timestamp <= EYE_THRESHOLD) {
+          hasChangeWithin500ms = true;
+          break;
+        }
+      }
+
+      // Check if LPC is within 500ms after this change
+      if (!hasChangeWithin500ms && lpcTime !== null && lpcTime !== undefined) {
+        if (lpcTime > group.timestamp && lpcTime - group.timestamp <= EYE_THRESHOLD) {
+          hasChangeWithin500ms = true;
+        }
+      }
+
+      if (!hasChangeWithin500ms) {
+        itemsWithEye.add(group.entry.id);
+      }
+    });
+
+    // Sort by timestamp descending (most recent first) and take top 20
+    const displayChanges = deduplicatedChanges
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 20);
+
+    const html = displayChanges.map((group, index) => {
+      const entry = group.entry;
+      const timeStr = formatTime(entry.timestamp);
+      const typeClass = `change-type-${entry.type}`;
+      const hasEye = itemsWithEye.has(entry.id);
+      const isLpc = entry.id === lpcEntryId;
+      const eyeIcon = hasEye ? '<span class="change-eye" title="No visual changes for 500ms+ after this point">👁</span>' : '';
+      const lpcBadge = isLpc ? '<span class="change-lpc-badge" title="Last Pixel Change">LPC</span>' : '';
+      return `
+        <div class="change-history-item ${typeClass}${hasEye ? ' has-eye' : ''}${isLpc ? ' is-lpc' : ''}" data-id="${entry.id}" title="Click to highlight element">
+          <span class="change-time">${timeStr}</span>
+          ${lpcBadge}
+          ${eyeIcon}
+          <span class="change-type">${entry.type}</span>
+          <span class="change-selector">&lt;${entry.tagName}&gt; ${entry.selector}</span>
+        </div>
+      `;
+    }).join('');
+
+    listEl.innerHTML = html;
+
+    // Add click handlers for highlighting
+    listEl.querySelectorAll('.change-history-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const id = parseFloat(item.dataset.id);
+        const entry = changeHistory.find(e => e.id === id);
+        if (entry && entry.element) {
+          highlightElement(entry.element);
+        }
+      });
+    });
+  }
+
+  // Highlight an element on the page
+  function highlightElement(element) {
+    // Remove previous highlight
+    removeHighlight();
+
+    if (!element || !element.getBoundingClientRect) return;
+
+    try {
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+
+      // Create highlight overlay
+      highlightOverlay = document.createElement('div');
+      highlightOverlay.id = 'perf-tracker-highlight';
+      highlightOverlay.style.cssText = `
+        position: fixed;
+        top: ${rect.top}px;
+        left: ${rect.left}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        background: rgba(99, 102, 241, 0.3);
+        border: 2px solid #6366f1;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 999998;
+        transition: all 0.2s ease;
+        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+      `;
+
+      // Add label
+      const label = document.createElement('div');
+      label.style.cssText = `
+        position: absolute;
+        top: -24px;
+        left: 0;
+        background: #6366f1;
+        color: white;
+        padding: 2px 8px;
+        font-size: 11px;
+        border-radius: 3px;
+        white-space: nowrap;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+      label.textContent = getElementSelector(element);
+      highlightOverlay.appendChild(label);
+
+      document.body.appendChild(highlightOverlay);
+      highlightedElement = element;
+
+      // Scroll element into view if needed
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Auto-remove highlight after 3 seconds
+      setTimeout(removeHighlight, 3000);
+    } catch (e) {
+      console.log('[Performance Tracker] Could not highlight element:', e);
+    }
+  }
+
+  // Remove highlight overlay
+  function removeHighlight() {
+    if (highlightOverlay && highlightOverlay.parentNode) {
+      highlightOverlay.parentNode.removeChild(highlightOverlay);
+    }
+    highlightOverlay = null;
+    highlightedElement = null;
+  }
+
+  // ========== END CHANGE HISTORY TRACKING ==========
+
+  // ========== LCP CANDIDATES TRACKING ==========
+
+  // Record an LCP candidate
+  function recordLcpCandidate(entry, isNavigation = false) {
+    const time = entry.renderTime || entry.loadTime;
+
+    // Don't track LCP candidates after 8 seconds
+    if (time > MAX_METRIC_DURATION) {
+      return;
+    }
+
+    const element = entry.element;
+    if (!element) return;
+
+    // Get element info
+    const tagName = element.tagName ? element.tagName.toLowerCase() : 'unknown';
+    const size = entry.size || 0;
+    const url = entry.url || '';
+
+    // Create candidate entry
+    const candidate = {
+      id: Date.now() + Math.random(),
+      timestamp: time,
+      element: element,
+      selector: getElementSelector(element),
+      tagName: tagName,
+      size: size,
+      url: url,
+      isNavigation: isNavigation
+    };
+
+    // Add to candidates list
+    lcpCandidates.push(candidate);
+
+    // Update the UI
+    renderLcpHistory();
+  }
+
+  // Render the LCP candidates list
+  function renderLcpHistory() {
+    const listEl = document.getElementById('lcp-history-list');
+    const countEl = document.getElementById('lcp-count');
+
+    if (!listEl) return;
+
+    // Update count
+    if (countEl) {
+      countEl.textContent = lcpCandidates.length;
+    }
+
+    if (lcpCandidates.length === 0) {
+      listEl.innerHTML = '<div class="lcp-history-empty">No LCP candidates detected yet</div>';
+      return;
+    }
+
+    // Sort by timestamp (earliest first) and show evolution
+    const sortedCandidates = [...lcpCandidates].sort((a, b) => a.timestamp - b.timestamp);
+    const latestCandidate = sortedCandidates[sortedCandidates.length - 1];
+
+    const html = sortedCandidates.map((candidate, index) => {
+      const timeStr = formatTime(candidate.timestamp);
+      const sizeStr = formatSize(candidate.size);
+      const isLatest = candidate === latestCandidate;
+      const latestClass = isLatest ? 'lcp-latest' : '';
+      const modeClass = candidate.isNavigation ? 'lcp-navigation' : 'lcp-pageload';
+
+      // Truncate URL for display
+      let urlDisplay = '';
+      if (candidate.url) {
+        const urlObj = new URL(candidate.url, window.location.origin);
+        urlDisplay = urlObj.pathname.split('/').pop() || urlObj.pathname;
+        if (urlDisplay.length > 20) {
+          urlDisplay = '...' + urlDisplay.slice(-17);
+        }
+      }
+
+      return `
+        <div class="lcp-history-item ${latestClass} ${modeClass}" data-index="${index}" title="Click to highlight element">
+          <div class="lcp-item-header">
+            <span class="lcp-time">${timeStr}</span>
+            <span class="lcp-size">${sizeStr}</span>
+            ${isLatest ? '<span class="lcp-badge">Current LCP</span>' : `<span class="lcp-order">#${index + 1}</span>`}
+          </div>
+          <div class="lcp-item-details">
+            <span class="lcp-tag">&lt;${candidate.tagName}&gt;</span>
+            <span class="lcp-selector">${candidate.selector}</span>
+          </div>
+          ${urlDisplay ? `<div class="lcp-item-url" title="${candidate.url}">${urlDisplay}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    listEl.innerHTML = html;
+
+    // Add click handlers for highlighting
+    listEl.querySelectorAll('.lcp-history-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const index = parseInt(item.dataset.index, 10);
+        const sortedCandidates = [...lcpCandidates].sort((a, b) => a.timestamp - b.timestamp);
+        const candidate = sortedCandidates[index];
+        if (candidate && candidate.element) {
+          highlightLcpElement(candidate.element);
+        }
+      });
+    });
+  }
+
+  // Format size in KB
+  function formatSize(size) {
+    if (!size || size === 0) return '-';
+    if (size < 1000) return size + ' px²';
+    if (size < 1000000) return (size / 1000).toFixed(1) + 'K px²';
+    return (size / 1000000).toFixed(2) + 'M px²';
+  }
+
+  // Highlight an LCP element on the page
+  function highlightLcpElement(element) {
+    // Remove previous highlight
+    removeLcpHighlight();
+
+    if (!element || !element.getBoundingClientRect) return;
+
+    try {
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+
+      // Create highlight overlay
+      lcpHighlightOverlay = document.createElement('div');
+      lcpHighlightOverlay.id = 'perf-tracker-lcp-highlight';
+      lcpHighlightOverlay.style.cssText = `
+        position: fixed;
+        top: ${rect.top}px;
+        left: ${rect.left}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        background: rgba(245, 158, 11, 0.3);
+        border: 3px solid #f59e0b;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 999998;
+        transition: all 0.2s ease;
+        box-shadow: 0 0 15px rgba(245, 158, 11, 0.6);
+      `;
+
+      // Add label
+      const label = document.createElement('div');
+      label.style.cssText = `
+        position: absolute;
+        top: -28px;
+        left: 0;
+        background: #f59e0b;
+        color: white;
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 3px;
+        white-space: nowrap;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      `;
+      label.textContent = 'LCP Element: ' + getElementSelector(element);
+      lcpHighlightOverlay.appendChild(label);
+
+      document.body.appendChild(lcpHighlightOverlay);
+
+      // Scroll element into view if needed
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Auto-remove highlight after 4 seconds
+      setTimeout(removeLcpHighlight, 4000);
+    } catch (e) {
+      console.log('[Performance Tracker] Could not highlight LCP element:', e);
+    }
+  }
+
+  // Remove LCP highlight overlay
+  function removeLcpHighlight() {
+    if (lcpHighlightOverlay && lcpHighlightOverlay.parentNode) {
+      lcpHighlightOverlay.parentNode.removeChild(lcpHighlightOverlay);
+    }
+    lcpHighlightOverlay = null;
+  }
+
+  // Clear LCP candidates (for navigation reset)
+  function clearLcpCandidates() {
+    lcpCandidates.length = 0;
+    renderLcpHistory();
+    removeLcpHighlight();
+  }
+
+  // ========== END LCP CANDIDATES TRACKING ==========
 
   // Update mode display
   function updateModeDisplay() {
@@ -177,6 +1064,7 @@
 
   // Metric color mapping (same as timeline)
   const metricColors = {
+    'ttfb': '#a855f7',
     'first-paint': '#8b5cf6',
     'fcp': '#3b82f6',
     'dom-ready': '#10b981',
@@ -203,19 +1091,16 @@
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
     
     // Define all metric keys to ensure we display all of them
-    const metricKeys = ['first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'last-pixel-change'];
+    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'last-pixel-change'];
     
     metricKeys.forEach(key => {
       const element = document.getElementById(key);
       if (element) {
         if (metrics[key] !== null && metrics[key] !== undefined) {
           element.textContent = formatTime(metrics[key]);
-          // Color code based on performance
-          if (key === 'dom-ready' || key === 'load-complete') {
-            element.className = 'metric-value ' + getPerformanceClass(metrics[key]);
-          } else {
-            element.className = 'metric-value';
-          }
+          // Color code based on performance thresholds
+          const rating = getPerformanceRating(key, metrics[key]);
+          element.className = 'metric-value ' + rating;
         } else {
           element.textContent = '-';
           element.className = 'metric-value';
@@ -227,124 +1112,354 @@
     renderTimeline();
   }
 
-  // Render timeline chart
+  // Render timeline chart with zoom and pan support
   function renderTimeline() {
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
     const timelineChart = document.getElementById('timeline-chart');
     const timelineContainer = document.getElementById('timeline-container');
-    
+    const zoomLevelDisplay = document.getElementById('zoom-level');
+
     if (!timelineChart) return;
-    
+
     // Make sure timeline container is visible
     if (timelineContainer) {
       timelineContainer.style.display = 'block';
     }
-    
+
+    // Update zoom level display
+    if (zoomLevelDisplay) {
+      zoomLevelDisplay.textContent = `${timelineZoom.level.toFixed(1)}x`;
+    }
+
     // Define timeline metrics (exclude TBT and CLS as they're not time-based)
     const timelineMetrics = [
-      { key: 'first-paint', label: 'First Paint', color: '#8b5cf6', order: 1 },
-      { key: 'fcp', label: 'FCP', color: '#3b82f6', order: 2 },
-      { key: 'dom-ready', label: 'DOM Ready', color: '#10b981', order: 3 },
-      { key: 'lcp', label: 'LCP', color: '#f59e0b', order: 4 },
-      { key: 'load-complete', label: 'Load Complete', color: '#ef4444', order: 5 },
-      { key: 'tti', label: 'TTI', color: '#6366f1', order: 6 },
-      { key: 'last-pixel-change', label: 'Last Pixel Change', color: '#06b6d4', order: 7 }
+      { key: 'ttfb', label: 'TTFB', order: 0 },
+      { key: 'first-paint', label: 'FP', order: 1 },
+      { key: 'fcp', label: 'FCP', order: 2 },
+      { key: 'dom-ready', label: 'DOM', order: 3 },
+      { key: 'lcp', label: 'LCP', order: 4 },
+      { key: 'load-complete', label: 'Load', order: 5 },
+      { key: 'tti', label: 'TTI', order: 6 },
+      { key: 'last-pixel-change', label: 'LPC', order: 7 }
     ];
-    
+
     // Filter out metrics that don't have values (allow 0 values)
-    const availableMetrics = timelineMetrics.filter(m => 
+    const availableMetrics = timelineMetrics.filter(m =>
       metrics[m.key] !== null && metrics[m.key] !== undefined && !isNaN(metrics[m.key])
     );
-    
+
     if (availableMetrics.length === 0) {
-      const emptyMessage = currentMode === 'navigation' 
-        ? (navigationCount > 0 
-          ? 'Navigation metrics are being tracked...' 
+      const emptyMessage = currentMode === 'navigation'
+        ? (navigationCount > 0
+          ? 'Navigation metrics are being tracked...'
           : 'No navigation detected yet. Navigate to see metrics.')
         : 'No metrics available yet';
-      timelineChart.innerHTML = `<div class="timeline-empty">${emptyMessage}</div>`;
+      timelineChart.innerHTML = `<div class="timeline-empty">${emptyMessage}</div><div class="timeline-selection" id="timeline-selection"></div>`;
       return;
     }
-    
-    // Find the maximum time value for scaling
-    const maxTime = Math.max(...availableMetrics.map(m => metrics[m.key]));
+
+    // Find the maximum time value for scaling (include visual changes)
+    const metricMaxTime = Math.max(...availableMetrics.map(m => metrics[m.key]));
+    const changeMaxTime = changeHistory.length > 0
+      ? Math.max(...changeHistory.map(c => c.timestamp))
+      : 0;
+    const maxTime = Math.max(metricMaxTime, changeMaxTime);
     // Add some padding (10%) to the max time for better visualization
     const paddedMaxTime = maxTime * 1.1;
-    const timelineWidth = 280; // Width of timeline in pixels
-    
-    // Clear previous content
+    const baseTimelineWidth = 280; // Base width of timeline in pixels
+
+    // Apply zoom - effective width increases with zoom
+    const effectiveWidth = baseTimelineWidth * timelineZoom.level;
+
+    // Calculate visible time range based on zoom and pan
+    const visibleStartTime = (timelineZoom.panOffset / effectiveWidth) * paddedMaxTime;
+    const visibleEndTime = ((timelineZoom.panOffset + baseTimelineWidth) / effectiveWidth) * paddedMaxTime;
+
+    // Clear previous content but preserve selection element
     timelineChart.innerHTML = '';
-    
+
+    // Create timeline viewport (clips content)
+    const viewport = document.createElement('div');
+    viewport.className = 'timeline-viewport';
+
+    // Create scrollable content container
+    const content = document.createElement('div');
+    content.className = 'timeline-content';
+    content.style.width = `${effectiveWidth}px`;
+    content.style.transform = `translateX(-${timelineZoom.panOffset}px)`;
+
     // Create timeline axis
     const axis = document.createElement('div');
     axis.className = 'timeline-axis';
-    timelineChart.appendChild(axis);
-    
-    // Create timeline bars for each metric
-    availableMetrics.forEach((metric, index) => {
+    axis.style.width = `${effectiveWidth}px`;
+    content.appendChild(axis);
+
+    // Create timeline bars for each metric with matching legend colors
+    availableMetrics.forEach((metric) => {
       const time = metrics[metric.key];
-      const position = (time / paddedMaxTime) * timelineWidth;
-      
+      const position = (time / paddedMaxTime) * effectiveWidth;
+
+      // Use the same color as the metric legend
+      const metricColor = metricColors[metric.key] || '#6b7280';
+      const perfRating = getPerformanceRating(metric.key, time);
+
       // Create timeline bar
       const bar = document.createElement('div');
-      bar.className = 'timeline-bar';
+      bar.className = `timeline-bar ${perfRating}`;
       bar.style.left = `${position}px`;
-      bar.style.backgroundColor = metric.color;
-      bar.title = `${metric.label}: ${formatTime(time)}`;
-      
-      // Create marker
+      bar.style.backgroundColor = metricColor;
+      bar.title = `${metric.label}: ${formatTime(time)} (${perfRating.replace('-', ' ')})`;
+      bar.dataset.metric = metric.key;
+
+      // Make LPC bar same height as visual change bars and add eye icon
+      if (metric.key === 'last-pixel-change') {
+        bar.style.height = '25px';
+        bar.classList.add('timeline-change-bar');
+        bar.classList.add('lpc-bar');
+        // Always add eye icon to LPC since it's the last visual change by definition
+        const eyeIcon = document.createElement('div');
+        eyeIcon.className = 'change-eye-icon lpc-eye-icon';
+        eyeIcon.innerHTML = '👁';
+        eyeIcon.title = 'Last Pixel Change - final visual stability point';
+        bar.appendChild(eyeIcon);
+      }
+
+      // Create marker with matching legend color
       const marker = document.createElement('div');
-      marker.className = 'timeline-marker';
-      marker.style.backgroundColor = metric.color;
-      marker.textContent = metric.label;
-      
-      // Create line
+      marker.className = `timeline-marker ${perfRating}`;
+      marker.style.backgroundColor = metricColor;
+      marker.innerHTML = `<span class="marker-label">${metric.label}</span><span class="marker-indicator"></span>`;
+
+      // Create vertical line
       const line = document.createElement('div');
       line.className = 'timeline-line';
       line.style.left = `${position}px`;
-      line.style.backgroundColor = metric.color;
-      
+      line.style.backgroundColor = metricColor;
+
       bar.appendChild(marker);
-      timelineChart.appendChild(bar);
-      timelineChart.appendChild(line);
+      content.appendChild(bar);
+      content.appendChild(line);
     });
-    
-    // Add time scale markers
-    const scaleMarkers = [0, 25, 50, 75, 100].map(percent => {
-      const time = (percent / 100) * paddedMaxTime;
-      const marker = document.createElement('div');
-      marker.className = 'timeline-scale-marker';
-      marker.style.left = `${(percent / 100) * timelineWidth}px`;
-      marker.textContent = formatTime(time);
-      return marker;
+
+    // Add visual changes to timeline (grouped by similar times)
+    const visualChangeColor = metricColors['last-pixel-change']; // Same color as Last Pixel Change metric
+    const TIME_GROUP_THRESHOLD = 50; // Group changes within 50ms
+
+    // Group visual changes by similar timestamps
+    const groupedChanges = [];
+    const sortedChanges = [...changeHistory].sort((a, b) => a.timestamp - b.timestamp);
+
+    sortedChanges.forEach(change => {
+      // Only include changes within the max time range
+      if (change.timestamp > paddedMaxTime) return;
+
+      // Find existing group within threshold
+      const existingGroup = groupedChanges.find(g =>
+        Math.abs(g.timestamp - change.timestamp) <= TIME_GROUP_THRESHOLD
+      );
+
+      if (existingGroup) {
+        existingGroup.count++;
+        existingGroup.changes.push(change);
+        // Update timestamp to average
+        existingGroup.timestamp = existingGroup.changes.reduce((sum, c) => sum + c.timestamp, 0) / existingGroup.changes.length;
+      } else {
+        groupedChanges.push({
+          timestamp: change.timestamp,
+          count: 1,
+          changes: [change]
+        });
+      }
     });
-    
-    const scaleContainer = document.createElement('div');
-    scaleContainer.className = 'timeline-scale';
-    scaleMarkers.forEach(m => scaleContainer.appendChild(m));
-    timelineChart.appendChild(scaleContainer);
+
+    // Get LPC time for "eye" icon logic
+    const lpcTime = metrics['last-pixel-change'];
+    const EYE_THRESHOLD = 500; // 500ms threshold for showing eye icon
+
+    // Draw visual change bars
+    groupedChanges.forEach((group, index) => {
+      const position = (group.timestamp / paddedMaxTime) * effectiveWidth;
+
+      // Create short bar for visual changes (half height)
+      const changeBar = document.createElement('div');
+      changeBar.className = 'timeline-bar timeline-change-bar';
+      changeBar.style.left = `${position}px`;
+      changeBar.style.backgroundColor = visualChangeColor;
+      changeBar.style.height = '25px'; // Half height
+      changeBar.style.opacity = Math.min(0.4 + (group.count * 0.1), 0.9).toString(); // More opacity for more changes
+
+      // Build tooltip with change details
+      const changeTypes = group.changes.map(c => c.type);
+      const uniqueTypes = [...new Set(changeTypes)];
+      const typesSummary = uniqueTypes.join(', ');
+      changeBar.title = `Visual Changes: ${group.count} change${group.count > 1 ? 's' : ''} at ${formatTime(group.timestamp)}\nTypes: ${typesSummary}`;
+
+      // Add count badge if multiple changes
+      if (group.count > 1) {
+        const countBadge = document.createElement('div');
+        countBadge.className = 'change-count-badge';
+        countBadge.textContent = group.count.toString();
+        changeBar.appendChild(countBadge);
+      }
+
+      // Check if there's no other visual change or LPC within 500ms after this bar
+      // to show the "eye" icon (indicating potential visual stability point)
+      let hasChangeWithin500ms = false;
+
+      // Check if any subsequent visual change group is within 500ms
+      for (let i = index + 1; i < groupedChanges.length; i++) {
+        if (groupedChanges[i].timestamp - group.timestamp <= EYE_THRESHOLD) {
+          hasChangeWithin500ms = true;
+          break;
+        }
+      }
+
+      // Check if LPC is within 500ms after this change
+      if (!hasChangeWithin500ms && lpcTime !== null && lpcTime !== undefined) {
+        if (lpcTime > group.timestamp && lpcTime - group.timestamp <= EYE_THRESHOLD) {
+          hasChangeWithin500ms = true;
+        }
+      }
+
+      // If no changes within 500ms, add eye icon
+      if (!hasChangeWithin500ms) {
+        const eyeIcon = document.createElement('div');
+        eyeIcon.className = 'change-eye-icon';
+        eyeIcon.innerHTML = '👁';
+        eyeIcon.title = 'No visual changes for 500ms+ after this point';
+        changeBar.appendChild(eyeIcon);
+      }
+
+      // Create thin vertical line for visual change
+      const changeLine = document.createElement('div');
+      changeLine.className = 'timeline-line timeline-change-line';
+      changeLine.style.left = `${position}px`;
+      changeLine.style.backgroundColor = visualChangeColor;
+      changeLine.style.height = '20px';
+      changeLine.style.opacity = '0.2';
+
+      content.appendChild(changeBar);
+      content.appendChild(changeLine);
+    });
+
+    // Create x-axis with time labels
+    const xAxisContainer = document.createElement('div');
+    xAxisContainer.className = 'timeline-x-axis';
+    xAxisContainer.style.width = `${effectiveWidth}px`;
+
+    // X-axis line
+    const xAxisLine = document.createElement('div');
+    xAxisLine.className = 'x-axis-line';
+    xAxisContainer.appendChild(xAxisLine);
+
+    // Calculate appropriate tick interval based on max time and zoom
+    const numTicks = Math.max(4, Math.min(Math.floor(5 * timelineZoom.level), 10));
+    const tickInterval = paddedMaxTime / numTicks;
+
+    // Add tick marks and labels
+    for (let i = 0; i <= numTicks; i++) {
+      const time = i * tickInterval;
+      const position = (time / paddedMaxTime) * effectiveWidth;
+
+      // Tick mark
+      const tick = document.createElement('div');
+      tick.className = 'x-axis-tick';
+      tick.style.left = `${position}px`;
+      xAxisContainer.appendChild(tick);
+
+      // Time label
+      const label = document.createElement('div');
+      label.className = 'x-axis-label';
+      label.style.left = `${position}px`;
+      label.textContent = formatTime(time);
+      xAxisContainer.appendChild(label);
+    }
+
+    // Add "Time" label at the end
+    const axisTitle = document.createElement('div');
+    axisTitle.className = 'x-axis-title';
+    axisTitle.textContent = 'Time →';
+    xAxisContainer.appendChild(axisTitle);
+
+    content.appendChild(xAxisContainer);
+
+    viewport.appendChild(content);
+    timelineChart.appendChild(viewport);
+
+    // Re-add selection element for drag-to-zoom
+    const selection = document.createElement('div');
+    selection.className = 'timeline-selection';
+    selection.id = 'timeline-selection';
+    timelineChart.appendChild(selection);
+
+    // Add zoom indicator if zoomed
+    if (timelineZoom.level > 1) {
+      const zoomIndicator = document.createElement('div');
+      zoomIndicator.className = 'timeline-zoom-indicator';
+      zoomIndicator.innerHTML = `
+        <span class="zoom-range">${formatTime(visibleStartTime)} - ${formatTime(visibleEndTime)}</span>
+      `;
+      timelineChart.appendChild(zoomIndicator);
+    }
+  }
+
+  // Reset timeline zoom
+  function resetTimelineZoom() {
+    timelineZoom.level = 1;
+    timelineZoom.panOffset = 0;
+    renderTimeline();
+  }
+
+  // Zoom to selection
+  function zoomToSelection(startX, endX, chartWidth) {
+    const selectionWidth = Math.abs(endX - startX);
+    if (selectionWidth < 10) return; // Minimum selection size
+
+    const minX = Math.min(startX, endX);
+    const maxX = Math.max(startX, endX);
+
+    // Calculate new zoom level
+    const newZoom = Math.min(chartWidth / selectionWidth * timelineZoom.level, 20); // Max 20x zoom
+
+    // Calculate new pan offset to center the selection
+    const selectionCenter = (minX + maxX) / 2;
+    const currentTimePosition = (timelineZoom.panOffset + selectionCenter) / (280 * timelineZoom.level);
+    const newPanOffset = currentTimePosition * (280 * newZoom) - (chartWidth / 2);
+
+    timelineZoom.level = newZoom;
+    timelineZoom.panOffset = Math.max(0, Math.min(newPanOffset, 280 * newZoom - chartWidth));
+
+    renderTimeline();
   }
 
   // Update metric
   function updateMetric(id, value, isNavigation = false) {
+    // Ignore time-based metrics above 8 seconds (CLS is a score, not time-based)
+    if (id !== 'cls' && value > MAX_METRIC_DURATION) {
+      console.log(`[Performance Tracker] Ignoring ${id}: ${value}ms exceeds ${MAX_METRIC_DURATION}ms cap`);
+      return;
+    }
+
     const targetMetrics = isNavigation ? navigationMetrics : pageLoadMetrics;
     targetMetrics[id] = value;
-    
+
     // Only update display if we're viewing the correct mode
-    if ((isNavigation && currentMode === 'navigation') || 
+    if ((isNavigation && currentMode === 'navigation') ||
         (!isNavigation && currentMode === 'page-load')) {
       const element = document.getElementById(id);
       if (element) {
         element.textContent = formatTime(value);
-        // Color code based on performance
-        if (id === 'dom-ready' || id === 'load-complete') {
-          element.className = 'metric-value ' + getPerformanceClass(value);
-        } else {
-          element.className = 'metric-value';
-        }
+        // Color code based on performance thresholds
+        const rating = getPerformanceRating(id, value);
+        element.className = 'metric-value ' + rating;
       }
       // Update timeline when metrics change in the current mode
       renderTimeline();
+
+      // When LPC is updated, re-render change history to show the LPC badge
+      if (id === 'last-pixel-change') {
+        renderChangeHistory();
+      }
     }
   }
 
@@ -354,12 +1469,6 @@
       return ms.toFixed(0) + 'ms';
     }
     return (ms / 1000).toFixed(2) + 's';
-  }
-
-  function getPerformanceClass(ms) {
-    if (ms < 1000) return 'good';
-    if (ms < 3000) return 'medium';
-    return 'poor';
   }
 
   // Initialize performance observers
@@ -403,6 +1512,11 @@
       if (!isNavigation) {
         lcpObserver = new PerformanceObserver((list) => {
           const entries = list.getEntries();
+          // Track all LCP candidates for history
+          entries.forEach((entry) => {
+            recordLcpCandidate(entry, false);
+          });
+          // Update the LCP metric with the latest entry
           const lastEntry = entries[entries.length - 1];
           if (lastEntry) {
             const time = lastEntry.renderTime || lastEntry.loadTime;
@@ -553,7 +1667,10 @@
         'timeline-container',
         'timeline-chart',
         'timeline-legend',
-        'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'last-pixel-change'
+        'ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'last-pixel-change',
+        'change-history-container', 'change-history-list', 'stable-indicator', 'clear-history', 'toggle-history',
+        'lcp-history-container', 'lcp-history-list', 'lcp-count', 'toggle-lcp-history',
+        'perf-tracker-highlight', 'perf-tracker-lcp-highlight'
       ];
       
       if (current.id && widgetIds.includes(current.id)) {
@@ -569,7 +1686,12 @@
             className.includes('timeline-chart') ||
             className.includes('metric-color-indicator') ||
             className.includes('mode-badge') ||
-            className.includes('mode-indicator')) {
+            className.includes('mode-indicator') ||
+            className.includes('change-history') ||
+            className.includes('stable-indicator') ||
+            className.includes('lcp-history') ||
+            className.includes('lcp-item') ||
+            className.includes('lcp-badge')) {
           return true;
         }
       }
@@ -796,76 +1918,106 @@
     const checkVisibleChanges = () => {
       rafScheduled = false;
       let hasRealVisibleChange = false;
-      
+      const visibleChanges = []; // Track all visible changes for history
+      const absoluteNow = performance.now();
+      // Calculate time relative to start (navigation start or page load)
+      const now = isNavigation && navStart ? absoluteNow - navStart : absoluteNow;
+
+      // Don't track changes after 8 seconds
+      if (now > MAX_METRIC_DURATION) {
+        pendingMutations = [];
+        return;
+      }
+
       for (const mutation of pendingMutations) {
         // Skip mutations from ignored elements
         if (shouldIgnoreMutation(mutation.target)) {
           continue;
         }
-        
+
         // More strict check - element must be visible AND in viewport
         const target = mutation.target;
         if (!target || target.nodeType !== Node.ELEMENT_NODE) {
           continue;
         }
-        
+
         // Check if element is actually visible and rendering
         if (!isElementVisible(target)) {
           continue;
         }
-        
+
         // For attribute changes, verify they actually affect rendering
         if (mutation.type === 'attributes') {
           const attrName = mutation.attributeName;
           // Only count attributes that definitely affect visual appearance
           if (attrName === 'src' || attrName === 'width' || attrName === 'height') {
-            // These always affect visual appearance
             hasRealVisibleChange = true;
-            break;
+            visibleChanges.push({ element: target, type: 'style' });
           } else if (attrName === 'style' || attrName === 'class') {
-            // Double-check that the style change is visible
             const rect = target.getBoundingClientRect();
             const computedStyle = window.getComputedStyle(target);
-            // Only count if element is still visible after change
-            if (rect.width > 0 && rect.height > 0 && 
-                computedStyle.display !== 'none' && 
+            if (rect.width > 0 && rect.height > 0 &&
+                computedStyle.display !== 'none' &&
                 computedStyle.visibility !== 'hidden' &&
                 computedStyle.opacity !== '0') {
               hasRealVisibleChange = true;
-              break;
+              visibleChanges.push({ element: target, type: 'style' });
             }
           }
         } else if (mutation.type === 'childList') {
-          // For added/removed nodes, check if they're visible
-          let hasVisibleNode = false;
+          // For added nodes
           for (let i = 0; i < mutation.addedNodes.length; i++) {
             const node = mutation.addedNodes[i];
+            // Skip plugin's own elements
+            if (node.nodeType === Node.ELEMENT_NODE && shouldIgnoreMutation(node)) {
+              continue;
+            }
             if (node.nodeType === Node.ELEMENT_NODE && isElementVisible(node)) {
-              hasVisibleNode = true;
-              break;
+              hasRealVisibleChange = true;
+              visibleChanges.push({ element: node, type: 'added' });
             } else if (node.nodeType === Node.TEXT_NODE) {
-              // Text node - check if parent is visible
               const parent = node.parentElement;
               if (parent && isElementVisible(parent) && node.textContent.trim().length > 0) {
-                hasVisibleNode = true;
-                break;
+                hasRealVisibleChange = true;
+                visibleChanges.push({ element: parent, type: 'text' });
               }
             }
           }
-          if (hasVisibleNode) {
-            hasRealVisibleChange = true;
-            break;
+          // For removed nodes
+          for (let i = 0; i < mutation.removedNodes.length; i++) {
+            const node = mutation.removedNodes[i];
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              hasRealVisibleChange = true;
+              visibleChanges.push({ element: mutation.target, type: 'removed' });
+            }
           }
         } else if (mutation.type === 'characterData') {
-          // Text content change - check if parent is visible
           const parent = target.parentElement;
           if (parent && isElementVisible(parent) && target.textContent.trim().length > 0) {
             hasRealVisibleChange = true;
-            break;
+            visibleChanges.push({ element: parent, type: 'text' });
           }
         }
       }
-      
+
+      // Record visible changes to history (limit to avoid flooding)
+      const uniqueChanges = new Map();
+      visibleChanges.forEach(change => {
+        const key = getElementSelector(change.element) + change.type;
+        if (!uniqueChanges.has(key)) {
+          uniqueChanges.set(key, change);
+        }
+      });
+
+      // Record up to 5 unique changes per batch
+      let recorded = 0;
+      uniqueChanges.forEach(change => {
+        if (recorded < 5) {
+          recordVisualChange(change.element, change.type, now);
+          recorded++;
+        }
+      });
+
       // Clear pending mutations
       pendingMutations = [];
       
@@ -1012,6 +2164,10 @@
       if (performance.getEntriesByType) {
         const navigation = performance.getEntriesByType('navigation')[0];
         if (navigation) {
+          // TTFB: Time from request start to first byte received
+          const ttfb = navigation.responseStart - navigation.requestStart;
+          updateMetric('ttfb', ttfb, false);
+
           const fp = navigation.domContentLoadedEventEnd - navigation.fetchStart;
           updateMetric('first-paint', fp, false);
 
@@ -1052,6 +2208,7 @@
     
     // Reset navigation metrics
     navigationMetrics = {
+      'ttfb': null,
       'dom-ready': null,
       'load-complete': null,
       'first-paint': null,
@@ -1059,7 +2216,8 @@
       'lcp': null,
       'tti': null,
       'tbt': null,
-      'cls': null
+      'cls': null,
+      'last-pixel-change': null
     };
     
     // Reset global tracking variables for navigation
