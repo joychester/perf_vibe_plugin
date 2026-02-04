@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Page Performance Tracker",
+  "name": "perf-vibe",
   "version": "1.0.0",
-  "description": "Track and display page performance metrics in the top-right corner",
+  "description": "Track and display page performance metrics with visual change tracking",
   "permissions": [
     "activeTab"
   ],
