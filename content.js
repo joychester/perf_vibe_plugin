@@ -2,12 +2,36 @@
 (function() {
   'use strict';
 
+  // Check if widget was closed for this tab session
+  if (sessionStorage.getItem('perf-vibe-closed') === 'true') {
+    return; // Don't show widget if user closed it in this tab
+  }
+
   // State management
   let currentMode = 'page-load'; // 'page-load' or 'navigation'
   let isDarkMode = false; // Theme state
+  let isRecording = true; // Recording state - starts recording automatically
+  let isDomainIgnored = false; // Domain ignore state
   let navigationCount = 0;
   let navigationStartTime = null;
   let isTrackingNavigation = false;
+
+  // Check if current domain is in the ignore list
+  function checkDomainIgnored() {
+    const savedDomains = localStorage.getItem('perf-vibe-ignored-domains');
+    if (!savedDomains) return false;
+
+    const currentDomain = window.location.hostname.toLowerCase();
+    const ignoredDomains = savedDomains.split('\n').map(d => d.trim().toLowerCase()).filter(d => d);
+
+    return ignoredDomains.some(d => {
+      // Match exact domain or subdomain
+      return currentDomain === d || currentDomain.endsWith('.' + d) || d.endsWith('.' + currentDomain);
+    });
+  }
+
+  // Initialize domain ignore state
+  isDomainIgnored = checkDomainIgnored();
   
   // Metrics storage
   let pageLoadMetrics = {
@@ -126,9 +150,12 @@
         </div>
       </div>
       <div class="header-right">
+        <button id="record-toggle" class="record-toggle-btn recording" title="Stop recording">⏺</button>
         <button id="mode-toggle" class="mode-toggle-btn" title="Switch between Page Load and Navigation metrics">⇆</button>
         <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark/light mode">🌙</button>
+        <button id="settings-toggle" class="settings-toggle-btn" title="Settings">⚙</button>
         <button id="toggle-widget" class="toggle-btn">−</button>
+        <button id="close-widget" class="close-widget-btn" title="Close widget">✕</button>
       </div>
     </div>
     <div class="widget-content" id="widget-content">
@@ -219,6 +246,32 @@
         </div>
       </div>
     </div>
+    <div class="settings-overlay" id="settings-overlay" style="display: none;">
+      <div class="settings-panel">
+        <div class="settings-header">
+          <span class="settings-title">⚙ Settings</span>
+          <button id="close-settings" class="close-settings-btn" title="Close settings">✕</button>
+        </div>
+        <div class="settings-content">
+          <div class="settings-section">
+            <label class="settings-label">Quick Add Current Domain</label>
+            <div class="quick-add-domain">
+              <span class="current-domain" id="current-domain"></span>
+              <button id="add-current-domain" class="add-domain-btn" title="Add to ignore list">+ Add</button>
+            </div>
+          </div>
+          <div class="settings-section">
+            <label class="settings-label">Domain Ignore List</label>
+            <p class="settings-hint">Enter domains to ignore (one per line). The plugin will not track metrics on these domains.</p>
+            <textarea id="domain-ignore-list" class="domain-ignore-textarea" placeholder="example.com&#10;subdomain.example.org"></textarea>
+          </div>
+          <div class="settings-actions">
+            <button id="save-settings" class="settings-save-btn">Save</button>
+          </div>
+          <div class="settings-status" id="settings-status"></div>
+        </div>
+      </div>
+    </div>
   `;
 
   // Append to body when DOM is ready
@@ -226,8 +279,35 @@
     if (document.body) {
       document.body.appendChild(widget);
       setupEventListeners();
+      // Show domain ignored banner if applicable
+      if (isDomainIgnored) {
+        showDomainIgnoredBanner();
+      }
     } else {
       setTimeout(injectWidget, 10);
+    }
+  }
+
+  // Show banner when domain is ignored
+  function showDomainIgnoredBanner() {
+    const widgetContent = document.getElementById('widget-content');
+    if (!widgetContent) return;
+
+    const banner = document.createElement('div');
+    banner.className = 'domain-ignored-banner';
+    banner.innerHTML = `
+      <span class="banner-icon">🚫</span>
+      <span class="banner-text">Recording blocked for <span class="banner-domain">${window.location.hostname}</span></span>
+    `;
+    widgetContent.insertBefore(banner, widgetContent.firstChild);
+
+    // Update recording button to show stopped state
+    const recordToggle = document.getElementById('record-toggle');
+    if (recordToggle) {
+      recordToggle.classList.remove('recording');
+      recordToggle.classList.add('stopped');
+      recordToggle.textContent = '▶';
+      recordToggle.title = 'Domain is in ignore list';
     }
   }
 
@@ -246,6 +326,19 @@
       widgetContent.style.display = isCollapsed ? 'none' : 'block';
       toggleBtn.textContent = isCollapsed ? '+' : '−';
     });
+
+    // Close widget button
+    const closeWidgetBtn = document.getElementById('close-widget');
+    if (closeWidgetBtn) {
+      closeWidgetBtn.addEventListener('click', () => {
+        // Stop recording
+        isRecording = false;
+        // Remember that user closed widget for this tab session
+        sessionStorage.setItem('perf-vibe-closed', 'true');
+        // Remove the widget from DOM
+        widget.remove();
+      });
+    }
 
     // Theme toggle (dark/light mode)
     const themeToggle = document.getElementById('theme-toggle');
@@ -273,6 +366,158 @@
           localStorage.setItem('perf-vibe-theme', 'light');
         }
       });
+    }
+
+    // Recording toggle (start/stop tracking)
+    const recordToggle = document.getElementById('record-toggle');
+    if (recordToggle) {
+      recordToggle.addEventListener('click', () => {
+        isRecording = !isRecording;
+        if (isRecording) {
+          recordToggle.classList.add('recording');
+          recordToggle.classList.remove('stopped');
+          recordToggle.textContent = '⏺';
+          recordToggle.title = 'Stop recording';
+          // Resume tracking
+          resumeTracking();
+        } else {
+          recordToggle.classList.remove('recording');
+          recordToggle.classList.add('stopped');
+          recordToggle.textContent = '▶';
+          recordToggle.title = 'Start recording';
+          // Pause tracking
+          pauseTracking();
+        }
+      });
+    }
+
+    // Settings overlay toggle
+    const settingsToggle = document.getElementById('settings-toggle');
+    const settingsOverlay = document.getElementById('settings-overlay');
+    const closeSettings = document.getElementById('close-settings');
+    const domainIgnoreList = document.getElementById('domain-ignore-list');
+    const saveSettings = document.getElementById('save-settings');
+    const settingsStatus = document.getElementById('settings-status');
+    const currentDomainEl = document.getElementById('current-domain');
+    const addCurrentDomainBtn = document.getElementById('add-current-domain');
+    let isSettingsOpen = false;
+
+    // Show current domain
+    const currentHostname = window.location.hostname;
+    if (currentDomainEl) {
+      currentDomainEl.textContent = currentHostname;
+    }
+
+    const openSettingsPanel = () => {
+      isSettingsOpen = true;
+      settingsOverlay.style.display = 'flex';
+      settingsToggle.classList.add('active');
+      // Update add button state
+      updateAddButtonState();
+    };
+
+    const closeSettingsPanel = () => {
+      isSettingsOpen = false;
+      settingsOverlay.style.display = 'none';
+      settingsToggle.classList.remove('active');
+    };
+
+    const updateAddButtonState = () => {
+      if (!addCurrentDomainBtn || !domainIgnoreList) return;
+      const domains = domainIgnoreList.value.split('\n').map(d => d.trim().toLowerCase()).filter(d => d);
+      const isAlreadyAdded = domains.includes(currentHostname.toLowerCase());
+      if (isAlreadyAdded) {
+        addCurrentDomainBtn.textContent = '✓ Added';
+        addCurrentDomainBtn.classList.add('added');
+        addCurrentDomainBtn.disabled = true;
+      } else {
+        addCurrentDomainBtn.textContent = '+ Add';
+        addCurrentDomainBtn.classList.remove('added');
+        addCurrentDomainBtn.disabled = false;
+      }
+    };
+
+    if (settingsToggle && settingsOverlay) {
+      // Load saved domain ignore list
+      const savedDomains = localStorage.getItem('perf-vibe-ignored-domains');
+      if (savedDomains && domainIgnoreList) {
+        domainIgnoreList.value = savedDomains;
+      }
+
+      // Quick add current domain button
+      if (addCurrentDomainBtn && domainIgnoreList) {
+        addCurrentDomainBtn.addEventListener('click', () => {
+          const currentValue = domainIgnoreList.value.trim();
+          const domains = currentValue.split('\n').map(d => d.trim().toLowerCase()).filter(d => d);
+
+          // Check if already in list
+          if (!domains.includes(currentHostname.toLowerCase())) {
+            // Add to textarea
+            if (currentValue) {
+              domainIgnoreList.value = currentValue + '\n' + currentHostname;
+            } else {
+              domainIgnoreList.value = currentHostname;
+            }
+            // Update button state
+            updateAddButtonState();
+            // Show hint
+            settingsStatus.textContent = 'Domain added! Click Save to apply.';
+            settingsStatus.className = 'settings-status info';
+            setTimeout(() => {
+              settingsStatus.className = 'settings-status';
+            }, 3000);
+          }
+        });
+
+        // Update button state when textarea changes
+        domainIgnoreList.addEventListener('input', updateAddButtonState);
+      }
+
+      settingsToggle.addEventListener('click', () => {
+        if (isSettingsOpen) {
+          closeSettingsPanel();
+        } else {
+          openSettingsPanel();
+        }
+      });
+
+      // Close button
+      if (closeSettings) {
+        closeSettings.addEventListener('click', closeSettingsPanel);
+      }
+
+      // Close on overlay background click
+      settingsOverlay.addEventListener('click', (e) => {
+        if (e.target === settingsOverlay) {
+          closeSettingsPanel();
+        }
+      });
+
+      if (saveSettings) {
+        saveSettings.addEventListener('click', () => {
+          const domains = domainIgnoreList.value.trim();
+          localStorage.setItem('perf-vibe-ignored-domains', domains);
+
+          // Show success message
+          settingsStatus.textContent = 'Settings saved!';
+          settingsStatus.className = 'settings-status success';
+
+          // Check if current domain is now ignored
+          const currentDomain = window.location.hostname;
+          const ignoredDomains = domains.split('\n').map(d => d.trim().toLowerCase()).filter(d => d);
+          const isIgnored = ignoredDomains.some(d => currentDomain.includes(d) || d.includes(currentDomain));
+
+          if (isIgnored && isRecording) {
+            settingsStatus.textContent = 'Settings saved! This domain is now ignored. Reload to apply.';
+            settingsStatus.className = 'settings-status info';
+          }
+
+          // Hide status after 3 seconds
+          setTimeout(() => {
+            settingsStatus.className = 'settings-status';
+          }, 3000);
+        });
+      }
     }
 
     modeToggle.addEventListener('click', () => {
@@ -581,6 +826,9 @@
   // Record a visual change
   function recordVisualChange(element, changeType, timestamp) {
     if (!element) return;
+
+    // Skip recording when not recording or domain is ignored
+    if (!isRecording || isDomainIgnored) return;
 
     // Don't track changes after 8 seconds
     if (timestamp > MAX_METRIC_DURATION) {
@@ -1434,6 +1682,9 @@
 
   // Update metric
   function updateMetric(id, value, isNavigation = false) {
+    // Skip updates when not recording or domain is ignored
+    if (!isRecording || isDomainIgnored) return;
+
     // Ignore time-based metrics above 8 seconds (CLS is a score, not time-based)
     if (id !== 'cls' && value > MAX_METRIC_DURATION) {
       console.log(`[Performance Tracker] Ignoring ${id}: ${value}ms exceeds ${MAX_METRIC_DURATION}ms cap`);
@@ -1469,6 +1720,19 @@
       return ms.toFixed(0) + 'ms';
     }
     return (ms / 1000).toFixed(2) + 's';
+  }
+
+  // Pause tracking - stops collecting new metrics
+  function pauseTracking() {
+    console.log('[perf-vibe] Recording paused');
+    // The isRecording flag is checked in updateMetric and recordVisualChange
+    // to skip new data collection
+  }
+
+  // Resume tracking - continues collecting metrics
+  function resumeTracking() {
+    console.log('[perf-vibe] Recording resumed');
+    // Recording continues from current state
   }
 
   // Initialize performance observers
