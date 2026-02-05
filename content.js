@@ -1157,9 +1157,9 @@
       return;
     }
 
-    // Sort by timestamp (earliest first) and show evolution
-    const sortedCandidates = [...lcpCandidates].sort((a, b) => a.timestamp - b.timestamp);
-    const latestCandidate = sortedCandidates[sortedCandidates.length - 1];
+    // Sort by timestamp (latest first) - descending order
+    const sortedCandidates = [...lcpCandidates].sort((a, b) => b.timestamp - a.timestamp);
+    const latestCandidate = sortedCandidates[0]; // Latest is now first
 
     const html = sortedCandidates.map((candidate, index) => {
       const timeStr = formatTime(candidate.timestamp);
@@ -1167,6 +1167,8 @@
       const isLatest = candidate === latestCandidate;
       const latestClass = isLatest ? 'lcp-latest' : '';
       const modeClass = candidate.isNavigation ? 'lcp-navigation' : 'lcp-pageload';
+      // Calculate original order (1 = earliest)
+      const originalOrder = sortedCandidates.length - index;
 
       // Truncate URL for display
       let urlDisplay = '';
@@ -1183,7 +1185,7 @@
           <div class="lcp-item-header">
             <span class="lcp-time">${timeStr}</span>
             <span class="lcp-size">${sizeStr}</span>
-            ${isLatest ? '<span class="lcp-badge">Current LCP</span>' : `<span class="lcp-order">#${index + 1}</span>`}
+            ${isLatest ? '<span class="lcp-badge">Current LCP</span>' : `<span class="lcp-order">#${originalOrder}</span>`}
           </div>
           <div class="lcp-item-details">
             <span class="lcp-tag">&lt;${candidate.tagName}&gt;</span>
@@ -1200,7 +1202,7 @@
     listEl.querySelectorAll('.lcp-history-item').forEach(item => {
       item.addEventListener('click', () => {
         const index = parseInt(item.dataset.index, 10);
-        const sortedCandidates = [...lcpCandidates].sort((a, b) => a.timestamp - b.timestamp);
+        const sortedCandidates = [...lcpCandidates].sort((a, b) => b.timestamp - a.timestamp);
         const candidate = sortedCandidates[index];
         if (candidate && candidate.element) {
           highlightLcpElement(candidate.element);
