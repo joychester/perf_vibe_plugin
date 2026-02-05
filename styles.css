@@ -151,6 +151,27 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Close widget button */
+.close-widget-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.close-widget-btn:hover {
+  background: rgba(239, 68, 68, 0.8);
+}
+
 .widget-content {
   padding: 12px 16px;
   max-height: 500px;
@@ -1020,6 +1041,316 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Record toggle button */
+.record-toggle-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.record-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.record-toggle-btn.recording {
+  color: #ef4444;
+  animation: pulse-record 1.5s ease-in-out infinite;
+}
+
+.record-toggle-btn.stopped {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+@keyframes pulse-record {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Settings toggle button */
+.settings-toggle-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settings-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(45deg);
+}
+
+.settings-toggle-btn.active {
+  background: rgba(255, 255, 255, 0.4);
+  transform: rotate(90deg);
+}
+
+/* Settings overlay */
+.settings-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 8px;
+  backdrop-filter: blur(2px);
+}
+
+.settings-panel {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 280px;
+  max-height: 90%;
+  overflow: hidden;
+  animation: settings-slide-in 0.2s ease-out;
+}
+
+@keyframes settings-slide-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.settings-title {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+}
+
+.close-settings-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.close-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Quick add domain */
+.quick-add-domain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.current-domain {
+  flex: 1;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 11px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-domain-btn {
+  background: #10b981;
+  border: none;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.add-domain-btn:hover:not(:disabled) {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+.add-domain-btn.added {
+  background: #6b7280;
+  cursor: default;
+}
+
+.add-domain-btn:disabled {
+  opacity: 0.7;
+}
+
+.settings-label {
+  font-weight: 600;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.settings-hint {
+  font-size: 10px;
+  color: #9ca3af;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.domain-ignore-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 11px;
+  resize: vertical;
+  background: #f9fafb;
+  color: #333;
+  box-sizing: border-box;
+}
+
+.domain-ignore-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.domain-ignore-textarea::placeholder {
+  color: #9ca3af;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-save-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: white;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-save-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+}
+
+.settings-status {
+  font-size: 10px;
+  text-align: center;
+  padding: 4px;
+  border-radius: 3px;
+  display: none;
+}
+
+.settings-status.success {
+  display: block;
+  background: #d1fae5;
+  color: #047857;
+}
+
+.settings-status.error {
+  display: block;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.settings-status.info {
+  display: block;
+  background: #fef3c7;
+  color: #b45309;
+}
+
+/* Domain ignored indicator */
+.domain-ignored-banner {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.domain-ignored-banner .banner-icon {
+  font-size: 16px;
+}
+
+.domain-ignored-banner .banner-text {
+  flex: 1;
+  font-size: 11px;
+  color: #92400e;
+}
+
+.domain-ignored-banner .banner-domain {
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-weight: 600;
+}
+
 /* ==================== DARK MODE STYLES ==================== */
 #performance-tracker-widget.dark-mode {
   background: rgba(30, 30, 35, 0.9);
@@ -1285,6 +1616,104 @@
 
 #performance-tracker-widget.dark-mode .change-lpc-badge {
   background: #0891b2;
+}
+
+/* Dark mode - Settings overlay */
+#performance-tracker-widget.dark-mode .settings-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+#performance-tracker-widget.dark-mode .settings-panel {
+  background: #1e1e23;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+#performance-tracker-widget.dark-mode .settings-header {
+  background: linear-gradient(135deg, #4c51bf 0%, #553c9a 100%);
+}
+
+#performance-tracker-widget.dark-mode .settings-title {
+  color: #ffffff;
+}
+
+#performance-tracker-widget.dark-mode .close-settings-btn {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+#performance-tracker-widget.dark-mode .close-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+#performance-tracker-widget.dark-mode .settings-label {
+  color: #a1a1aa;
+}
+
+#performance-tracker-widget.dark-mode .quick-add-domain {
+  background: #27272a;
+  border-color: #3f3f46;
+}
+
+#performance-tracker-widget.dark-mode .current-domain {
+  color: #e5e5e5;
+}
+
+#performance-tracker-widget.dark-mode .add-domain-btn {
+  background: #10b981;
+}
+
+#performance-tracker-widget.dark-mode .add-domain-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
+#performance-tracker-widget.dark-mode .add-domain-btn.added {
+  background: #52525b;
+}
+
+#performance-tracker-widget.dark-mode .settings-hint {
+  color: #71717a;
+}
+
+#performance-tracker-widget.dark-mode .domain-ignore-textarea {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #e5e5e5;
+}
+
+#performance-tracker-widget.dark-mode .domain-ignore-textarea:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+}
+
+#performance-tracker-widget.dark-mode .domain-ignore-textarea::placeholder {
+  color: #52525b;
+}
+
+#performance-tracker-widget.dark-mode .settings-save-btn {
+  background: linear-gradient(135deg, #4c51bf 0%, #553c9a 100%);
+}
+
+#performance-tracker-widget.dark-mode .settings-status.success {
+  background: rgba(52, 211, 153, 0.2);
+  color: #34d399;
+}
+
+#performance-tracker-widget.dark-mode .settings-status.error {
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+}
+
+#performance-tracker-widget.dark-mode .settings-status.info {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+#performance-tracker-widget.dark-mode .domain-ignored-banner {
+  background: linear-gradient(135deg, rgba(100, 70, 20, 0.4) 0%, rgba(120, 80, 20, 0.3) 100%);
+  border-color: #d97706;
+}
+
+#performance-tracker-widget.dark-mode .domain-ignored-banner .banner-text {
+  color: #fbbf24;
 }
 
 /* Dark mode scrollbars */
