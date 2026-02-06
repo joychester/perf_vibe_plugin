@@ -15,6 +15,7 @@ Track all critical Web Vitals and performance metrics:
 - **TTI** - Time to Interactive
 - **TBT** - Total Blocking Time
 - **CLS** - Cumulative Layout Shift
+- **DOM Elements** - Total DOM element count
 - **DOM Ready** - DOMContentLoaded event
 - **Load Complete** - Window load event
 - **First Paint** - First paint timing
@@ -37,6 +38,12 @@ Track all critical Web Vitals and performance metrics:
 - Track all LCP candidate elements
 - View element details (tag, selector, size, URL)
 - Click to highlight element on page
+
+### Content Density Heatmap
+- Visual overlay showing where content is concentrated on the page
+- Click the heatmap icon (▧) next to DOM Elements to toggle
+- Color-coded grid: blue (less content) → green → yellow → red (more content)
+- Helps identify content-heavy areas that may impact performance
 
 ### Soft Navigation Support
 - Automatic detection of SPA navigations (pushState, replaceState, popstate)
@@ -118,6 +125,7 @@ Metrics are color-coded based on Google's Web Vitals thresholds:
 | TTI | ≤3800ms | ≤7300ms | >7300ms |
 | TBT | ≤200ms | ≤600ms | >600ms |
 | CLS | ≤0.1 | ≤0.25 | >0.25 |
+| DOM Elements | ≤1,500 | ≤3,000 | >3,000 |
 
 ## Browser Support
 

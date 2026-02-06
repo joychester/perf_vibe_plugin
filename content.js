@@ -45,6 +45,7 @@
     'tbt': null,
     'cls': null,
     'inp': null,
+    'dom-size': null,
     'last-pixel-change': null
   };
   let navigationMetrics = {
@@ -58,6 +59,7 @@
     'tbt': null,
     'cls': null,
     'inp': null,
+    'dom-size': null,
     'last-pixel-change': null
   };
   
@@ -98,6 +100,10 @@
   const lcpCandidates = [];
   let lcpHighlightOverlay = null;
 
+  // Heatmap state
+  let heatmapOverlay = null;
+  let isHeatmapVisible = false;
+
   // Performance thresholds for color coding (in ms)
   // Based on Web Vitals recommendations
   const performanceThresholds = {
@@ -108,6 +114,7 @@
     'tbt': { good: 200, needsImprovement: 600 },
     'cls': { good: 0.1, needsImprovement: 0.25 },
     'inp': { good: 200, needsImprovement: 500 },
+    'dom-size': { good: 1500, needsImprovement: 3000 },
     'dom-ready': { good: 1500, needsImprovement: 3000 },
     'load-complete': { good: 3000, needsImprovement: 6000 },
     'first-paint': { good: 1000, needsImprovement: 2500 },
@@ -236,6 +243,11 @@
           <span class="metric-value" id="inp">waiting...</span>
         </div>
         <div class="metric">
+          <span class="metric-label"><span class="metric-color-indicator" data-metric="dom-size"></span>DOM Elements:</span>
+          <span class="metric-value" id="dom-size">-</span>
+          <button id="heatmap-toggle" class="heatmap-toggle-btn" title="Show content density heatmap">▧</button>
+        </div>
+        <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="last-pixel-change"></span>Last Pixel Change:</span>
           <span class="metric-value" id="last-pixel-change">-</span>
         </div>
@@ -346,7 +358,19 @@
         sessionStorage.setItem('perf-vibe-closed', 'true');
         // Remove the widget from DOM
         widget.remove();
+        // Also remove heatmap if visible
+        if (heatmapOverlay) {
+          heatmapOverlay.remove();
+          heatmapOverlay = null;
+          isHeatmapVisible = false;
+        }
       });
+    }
+
+    // Heatmap toggle button
+    const heatmapToggleBtn = document.getElementById('heatmap-toggle');
+    if (heatmapToggleBtn) {
+      heatmapToggleBtn.addEventListener('click', toggleHeatmap);
     }
 
     // Theme toggle (dark/light mode)
@@ -1333,6 +1357,7 @@
     'tbt': '#ec4899',
     'cls': '#14b8a6',
     'inp': '#f472b6',
+    'dom-size': '#84cc16',
     'last-pixel-change': '#06b6d4'
   };
 
@@ -1351,13 +1376,18 @@
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
     
     // Define all metric keys to ensure we display all of them
-    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'inp', 'last-pixel-change'];
+    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'inp', 'dom-size', 'last-pixel-change'];
     
     metricKeys.forEach(key => {
       const element = document.getElementById(key);
       if (element) {
         if (metrics[key] !== null && metrics[key] !== undefined) {
-          element.textContent = formatTime(metrics[key]);
+          // DOM size is displayed as a count, not time
+          if (key === 'dom-size') {
+            element.textContent = metrics[key].toLocaleString();
+          } else {
+            element.textContent = formatTime(metrics[key]);
+          }
           // Color code based on performance thresholds
           const rating = getPerformanceRating(key, metrics[key]);
           element.className = 'metric-value ' + rating;
@@ -1699,7 +1729,8 @@
     if (!isRecording || isDomainIgnored) return;
 
     // Ignore time-based metrics above 8 seconds (CLS is a score, not time-based)
-    if (id !== 'cls' && value > MAX_METRIC_DURATION) {
+    // Skip duration cap for non-time metrics (CLS and DOM size)
+    if (id !== 'cls' && id !== 'dom-size' && value > MAX_METRIC_DURATION) {
       console.log(`[Performance Tracker] Ignoring ${id}: ${value}ms exceeds ${MAX_METRIC_DURATION}ms cap`);
       return;
     }
@@ -1712,7 +1743,12 @@
         (!isNavigation && currentMode === 'page-load')) {
       const element = document.getElementById(id);
       if (element) {
-        element.textContent = formatTime(value);
+        // DOM size is displayed as a count, not time
+        if (id === 'dom-size') {
+          element.textContent = value.toLocaleString();
+        } else {
+          element.textContent = formatTime(value);
+        }
         // Color code based on performance thresholds
         const rating = getPerformanceRating(id, value);
         element.className = 'metric-value ' + rating;
@@ -2508,6 +2544,7 @@
       'tbt': null,
       'cls': null,
       'inp': null,
+      'dom-size': null,
       'last-pixel-change': null
     };
 
@@ -2515,12 +2552,18 @@
     clsValue = 0;
     longTasks = [];
     worstInp = 0;
-    
+
     // Update display if in navigation mode
     if (currentMode === 'navigation') {
       updateModeDisplay();
       displayMetrics();
     }
+
+    // Update DOM size after navigation settles
+    setTimeout(() => {
+      updateDomSize(true);
+      displayMetrics();
+    }, 500);
     
     // Reinitialize observers for navigation
     initPerformanceObservers(true);
@@ -2726,6 +2769,188 @@
   }
 
   // Initialize
+  // Track DOM size (total element count)
+  function updateDomSize(isNavigation = false) {
+    // Count all elements excluding our widget
+    const allElements = document.getElementsByTagName('*');
+    let count = allElements.length;
+
+    // Subtract our widget elements (approximate)
+    const widget = document.getElementById('performance-tracker-widget');
+    if (widget) {
+      count -= widget.getElementsByTagName('*').length + 1;
+    }
+
+    updateMetric('dom-size', count, isNavigation);
+  }
+
+  // Heatmap visualization functions
+  function createHeatmapOverlay() {
+    // Remove existing overlay if any
+    if (heatmapOverlay) {
+      heatmapOverlay.remove();
+      heatmapOverlay = null;
+    }
+
+    const GRID_SIZE = 20; // 20x20 grid cells
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const cellWidth = viewportWidth / GRID_SIZE;
+    const cellHeight = viewportHeight / GRID_SIZE;
+
+    // Create overlay container
+    heatmapOverlay = document.createElement('div');
+    heatmapOverlay.id = 'perf-vibe-heatmap-overlay';
+    heatmapOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 2147483644;
+      display: grid;
+      grid-template-columns: repeat(${GRID_SIZE}, 1fr);
+      grid-template-rows: repeat(${GRID_SIZE}, 1fr);
+    `;
+
+    // Calculate density for each grid cell
+    const densityGrid = calculateContentDensity(GRID_SIZE, cellWidth, cellHeight);
+    const maxDensity = Math.max(...densityGrid.flat(), 1);
+
+    // Create grid cells with colors based on density
+    for (let row = 0; row < GRID_SIZE; row++) {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const cell = document.createElement('div');
+        const density = densityGrid[row][col];
+        const normalizedDensity = density / maxDensity;
+        const color = getHeatmapColor(normalizedDensity);
+
+        cell.style.cssText = `
+          background: ${color};
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          transition: opacity 0.3s;
+        `;
+        cell.title = `Elements: ${density}`;
+        heatmapOverlay.appendChild(cell);
+      }
+    }
+
+    // Add legend
+    const legend = document.createElement('div');
+    legend.style.cssText = `
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      padding: 8px 16px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 11px;
+      color: white;
+      pointer-events: auto;
+    `;
+    legend.innerHTML = `
+      <span>Less content</span>
+      <div style="display: flex; height: 12px; width: 120px; border-radius: 3px; overflow: hidden;">
+        <div style="flex: 1; background: rgba(59, 130, 246, 0.5);"></div>
+        <div style="flex: 1; background: rgba(16, 185, 129, 0.5);"></div>
+        <div style="flex: 1; background: rgba(245, 158, 11, 0.5);"></div>
+        <div style="flex: 1; background: rgba(239, 68, 68, 0.5);"></div>
+      </div>
+      <span>More content</span>
+      <button id="close-heatmap" style="margin-left: 12px; background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;">Close</button>
+    `;
+    heatmapOverlay.appendChild(legend);
+
+    document.body.appendChild(heatmapOverlay);
+
+    // Add close button handler
+    document.getElementById('close-heatmap').addEventListener('click', toggleHeatmap);
+  }
+
+  function calculateContentDensity(gridSize, cellWidth, cellHeight) {
+    const densityGrid = Array(gridSize).fill(null).map(() => Array(gridSize).fill(0));
+    const widget = document.getElementById('performance-tracker-widget');
+    const heatmap = document.getElementById('perf-vibe-heatmap-overlay');
+
+    // Get all visible elements
+    const allElements = document.body.getElementsByTagName('*');
+
+    for (const element of allElements) {
+      // Skip our widget and heatmap elements
+      if (widget && widget.contains(element)) continue;
+      if (heatmap && heatmap.contains(element)) continue;
+      if (element.id === 'performance-tracker-widget') continue;
+      if (element.id === 'perf-vibe-heatmap-overlay') continue;
+
+      // Skip hidden elements
+      const style = window.getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+
+      const rect = element.getBoundingClientRect();
+
+      // Skip elements outside viewport or with no size
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+      if (rect.right < 0 || rect.left > window.innerWidth) continue;
+
+      // Calculate which grid cells this element overlaps
+      const startCol = Math.max(0, Math.floor(rect.left / cellWidth));
+      const endCol = Math.min(gridSize - 1, Math.floor(rect.right / cellWidth));
+      const startRow = Math.max(0, Math.floor(rect.top / cellHeight));
+      const endRow = Math.min(gridSize - 1, Math.floor(rect.bottom / cellHeight));
+
+      // Weight by element area (larger elements contribute more)
+      const area = rect.width * rect.height;
+      const weight = Math.min(1, area / (cellWidth * cellHeight * 4)) + 0.1;
+
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          densityGrid[row][col] += weight;
+        }
+      }
+    }
+
+    return densityGrid;
+  }
+
+  function getHeatmapColor(normalizedValue) {
+    // Color gradient: blue (low) -> green -> yellow -> red (high)
+    if (normalizedValue < 0.25) {
+      return `rgba(59, 130, 246, ${0.2 + normalizedValue * 1.2})`; // Blue
+    } else if (normalizedValue < 0.5) {
+      return `rgba(16, 185, 129, ${0.3 + normalizedValue * 0.8})`; // Green
+    } else if (normalizedValue < 0.75) {
+      return `rgba(245, 158, 11, ${0.4 + normalizedValue * 0.6})`; // Yellow/Orange
+    } else {
+      return `rgba(239, 68, 68, ${0.5 + normalizedValue * 0.4})`; // Red
+    }
+  }
+
+  function toggleHeatmap() {
+    if (isHeatmapVisible) {
+      // Hide heatmap
+      if (heatmapOverlay) {
+        heatmapOverlay.remove();
+        heatmapOverlay = null;
+      }
+      isHeatmapVisible = false;
+      const btn = document.getElementById('heatmap-toggle');
+      if (btn) btn.classList.remove('active');
+    } else {
+      // Show heatmap
+      createHeatmapOverlay();
+      isHeatmapVisible = true;
+      const btn = document.getElementById('heatmap-toggle');
+      if (btn) btn.classList.add('active');
+    }
+  }
+
   function initializeExtension() {
     injectWidget();
     initializeColorIndicators();
@@ -2735,11 +2960,13 @@
     updateModeDisplay();
     // Display initial metrics and timeline
     setTimeout(() => {
+      updateDomSize(false); // Initial DOM size measurement
       displayMetrics();
       renderTimeline();
     }, 100);
     // Update timeline again after metrics have time to populate
     setTimeout(() => {
+      updateDomSize(false); // Update DOM size after page settles
       renderTimeline();
     }, 2000);
   }
