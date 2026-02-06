@@ -15,6 +15,7 @@ Track all critical Web Vitals and performance metrics:
 - **TTI** - Time to Interactive
 - **TBT** - Total Blocking Time
 - **CLS** - Cumulative Layout Shift
+- **DOM Elements** - Total DOM element count
 - **DOM Ready** - DOMContentLoaded event
 - **Load Complete** - Window load event
 - **First Paint** - First paint timing
@@ -118,6 +119,7 @@ Metrics are color-coded based on Google's Web Vitals thresholds:
 | TTI | ≤3800ms | ≤7300ms | >7300ms |
 | TBT | ≤200ms | ≤600ms | >600ms |
 | CLS | ≤0.1 | ≤0.25 | >0.25 |
+| DOM Elements | ≤1,500 | ≤3,000 | >3,000 |
 
 ## Browser Support
 

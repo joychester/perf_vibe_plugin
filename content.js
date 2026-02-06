@@ -45,6 +45,7 @@
     'tbt': null,
     'cls': null,
     'inp': null,
+    'dom-size': null,
     'last-pixel-change': null
   };
   let navigationMetrics = {
@@ -58,6 +59,7 @@
     'tbt': null,
     'cls': null,
     'inp': null,
+    'dom-size': null,
     'last-pixel-change': null
   };
   
@@ -108,6 +110,7 @@
     'tbt': { good: 200, needsImprovement: 600 },
     'cls': { good: 0.1, needsImprovement: 0.25 },
     'inp': { good: 200, needsImprovement: 500 },
+    'dom-size': { good: 1500, needsImprovement: 3000 },
     'dom-ready': { good: 1500, needsImprovement: 3000 },
     'load-complete': { good: 3000, needsImprovement: 6000 },
     'first-paint': { good: 1000, needsImprovement: 2500 },
@@ -234,6 +237,10 @@
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="inp"></span>Interaction to Next Paint:</span>
           <span class="metric-value" id="inp">waiting...</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label"><span class="metric-color-indicator" data-metric="dom-size"></span>DOM Elements:</span>
+          <span class="metric-value" id="dom-size">-</span>
         </div>
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="last-pixel-change"></span>Last Pixel Change:</span>
@@ -1333,6 +1340,7 @@
     'tbt': '#ec4899',
     'cls': '#14b8a6',
     'inp': '#f472b6',
+    'dom-size': '#84cc16',
     'last-pixel-change': '#06b6d4'
   };
 
@@ -1351,13 +1359,18 @@
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
     
     // Define all metric keys to ensure we display all of them
-    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'inp', 'last-pixel-change'];
+    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'inp', 'dom-size', 'last-pixel-change'];
     
     metricKeys.forEach(key => {
       const element = document.getElementById(key);
       if (element) {
         if (metrics[key] !== null && metrics[key] !== undefined) {
-          element.textContent = formatTime(metrics[key]);
+          // DOM size is displayed as a count, not time
+          if (key === 'dom-size') {
+            element.textContent = metrics[key].toLocaleString();
+          } else {
+            element.textContent = formatTime(metrics[key]);
+          }
           // Color code based on performance thresholds
           const rating = getPerformanceRating(key, metrics[key]);
           element.className = 'metric-value ' + rating;
@@ -1699,7 +1712,8 @@
     if (!isRecording || isDomainIgnored) return;
 
     // Ignore time-based metrics above 8 seconds (CLS is a score, not time-based)
-    if (id !== 'cls' && value > MAX_METRIC_DURATION) {
+    // Skip duration cap for non-time metrics (CLS and DOM size)
+    if (id !== 'cls' && id !== 'dom-size' && value > MAX_METRIC_DURATION) {
       console.log(`[Performance Tracker] Ignoring ${id}: ${value}ms exceeds ${MAX_METRIC_DURATION}ms cap`);
       return;
     }
@@ -1712,7 +1726,12 @@
         (!isNavigation && currentMode === 'page-load')) {
       const element = document.getElementById(id);
       if (element) {
-        element.textContent = formatTime(value);
+        // DOM size is displayed as a count, not time
+        if (id === 'dom-size') {
+          element.textContent = value.toLocaleString();
+        } else {
+          element.textContent = formatTime(value);
+        }
         // Color code based on performance thresholds
         const rating = getPerformanceRating(id, value);
         element.className = 'metric-value ' + rating;
@@ -2508,6 +2527,7 @@
       'tbt': null,
       'cls': null,
       'inp': null,
+      'dom-size': null,
       'last-pixel-change': null
     };
 
@@ -2515,12 +2535,18 @@
     clsValue = 0;
     longTasks = [];
     worstInp = 0;
-    
+
     // Update display if in navigation mode
     if (currentMode === 'navigation') {
       updateModeDisplay();
       displayMetrics();
     }
+
+    // Update DOM size after navigation settles
+    setTimeout(() => {
+      updateDomSize(true);
+      displayMetrics();
+    }, 500);
     
     // Reinitialize observers for navigation
     initPerformanceObservers(true);
@@ -2726,6 +2752,21 @@
   }
 
   // Initialize
+  // Track DOM size (total element count)
+  function updateDomSize(isNavigation = false) {
+    // Count all elements excluding our widget
+    const allElements = document.getElementsByTagName('*');
+    let count = allElements.length;
+
+    // Subtract our widget elements (approximate)
+    const widget = document.getElementById('performance-tracker-widget');
+    if (widget) {
+      count -= widget.getElementsByTagName('*').length + 1;
+    }
+
+    updateMetric('dom-size', count, isNavigation);
+  }
+
   function initializeExtension() {
     injectWidget();
     initializeColorIndicators();
@@ -2735,11 +2776,13 @@
     updateModeDisplay();
     // Display initial metrics and timeline
     setTimeout(() => {
+      updateDomSize(false); // Initial DOM size measurement
       displayMetrics();
       renderTimeline();
     }, 100);
     // Update timeline again after metrics have time to populate
     setTimeout(() => {
+      updateDomSize(false); // Update DOM size after page settles
       renderTimeline();
     }, 2000);
   }
