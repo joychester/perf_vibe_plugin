@@ -39,6 +39,12 @@ Track all critical Web Vitals and performance metrics:
 - View element details (tag, selector, size, URL)
 - Click to highlight element on page
 
+### Content Density Heatmap
+- Visual overlay showing where content is concentrated on the page
+- Click the heatmap icon (▧) next to DOM Elements to toggle
+- Color-coded grid: blue (less content) → green → yellow → red (more content)
+- Helps identify content-heavy areas that may impact performance
+
 ### Soft Navigation Support
 - Automatic detection of SPA navigations (pushState, replaceState, popstate)
 - Separate metrics for page load vs navigation

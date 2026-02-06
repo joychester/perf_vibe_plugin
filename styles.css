@@ -588,6 +588,36 @@
   color: #ef4444;
 }
 
+/* Heatmap toggle button */
+.heatmap-toggle-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  vertical-align: middle;
+}
+
+.heatmap-toggle-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  transform: scale(1.1);
+}
+
+.heatmap-toggle-btn.active {
+  background: rgba(239, 68, 68, 0.4);
+  border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
 /* LCP History Section - positioned under LCP metric */
 .lcp-history-section {
   margin: 8px 0;
@@ -1461,6 +1491,22 @@
 
 #performance-tracker-widget.dark-mode .metric-value.poor {
   color: #f87171;
+}
+
+/* Dark mode - Heatmap toggle button */
+#performance-tracker-widget.dark-mode .heatmap-toggle-btn {
+  background: rgba(248, 113, 113, 0.15);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: #f87171;
+}
+
+#performance-tracker-widget.dark-mode .heatmap-toggle-btn:hover {
+  background: rgba(248, 113, 113, 0.25);
+}
+
+#performance-tracker-widget.dark-mode .heatmap-toggle-btn.active {
+  background: rgba(248, 113, 113, 0.4);
+  border-color: #f87171;
 }
 
 /* Dark mode - LCP History Section */

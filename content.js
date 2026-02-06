@@ -100,6 +100,10 @@
   const lcpCandidates = [];
   let lcpHighlightOverlay = null;
 
+  // Heatmap state
+  let heatmapOverlay = null;
+  let isHeatmapVisible = false;
+
   // Performance thresholds for color coding (in ms)
   // Based on Web Vitals recommendations
   const performanceThresholds = {
@@ -241,6 +245,7 @@
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="dom-size"></span>DOM Elements:</span>
           <span class="metric-value" id="dom-size">-</span>
+          <button id="heatmap-toggle" class="heatmap-toggle-btn" title="Show content density heatmap">▧</button>
         </div>
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="last-pixel-change"></span>Last Pixel Change:</span>
@@ -353,7 +358,19 @@
         sessionStorage.setItem('perf-vibe-closed', 'true');
         // Remove the widget from DOM
         widget.remove();
+        // Also remove heatmap if visible
+        if (heatmapOverlay) {
+          heatmapOverlay.remove();
+          heatmapOverlay = null;
+          isHeatmapVisible = false;
+        }
       });
+    }
+
+    // Heatmap toggle button
+    const heatmapToggleBtn = document.getElementById('heatmap-toggle');
+    if (heatmapToggleBtn) {
+      heatmapToggleBtn.addEventListener('click', toggleHeatmap);
     }
 
     // Theme toggle (dark/light mode)
@@ -2765,6 +2782,173 @@
     }
 
     updateMetric('dom-size', count, isNavigation);
+  }
+
+  // Heatmap visualization functions
+  function createHeatmapOverlay() {
+    // Remove existing overlay if any
+    if (heatmapOverlay) {
+      heatmapOverlay.remove();
+      heatmapOverlay = null;
+    }
+
+    const GRID_SIZE = 20; // 20x20 grid cells
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const cellWidth = viewportWidth / GRID_SIZE;
+    const cellHeight = viewportHeight / GRID_SIZE;
+
+    // Create overlay container
+    heatmapOverlay = document.createElement('div');
+    heatmapOverlay.id = 'perf-vibe-heatmap-overlay';
+    heatmapOverlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 2147483644;
+      display: grid;
+      grid-template-columns: repeat(${GRID_SIZE}, 1fr);
+      grid-template-rows: repeat(${GRID_SIZE}, 1fr);
+    `;
+
+    // Calculate density for each grid cell
+    const densityGrid = calculateContentDensity(GRID_SIZE, cellWidth, cellHeight);
+    const maxDensity = Math.max(...densityGrid.flat(), 1);
+
+    // Create grid cells with colors based on density
+    for (let row = 0; row < GRID_SIZE; row++) {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const cell = document.createElement('div');
+        const density = densityGrid[row][col];
+        const normalizedDensity = density / maxDensity;
+        const color = getHeatmapColor(normalizedDensity);
+
+        cell.style.cssText = `
+          background: ${color};
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          transition: opacity 0.3s;
+        `;
+        cell.title = `Elements: ${density}`;
+        heatmapOverlay.appendChild(cell);
+      }
+    }
+
+    // Add legend
+    const legend = document.createElement('div');
+    legend.style.cssText = `
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      padding: 8px 16px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 11px;
+      color: white;
+      pointer-events: auto;
+    `;
+    legend.innerHTML = `
+      <span>Less content</span>
+      <div style="display: flex; height: 12px; width: 120px; border-radius: 3px; overflow: hidden;">
+        <div style="flex: 1; background: rgba(59, 130, 246, 0.5);"></div>
+        <div style="flex: 1; background: rgba(16, 185, 129, 0.5);"></div>
+        <div style="flex: 1; background: rgba(245, 158, 11, 0.5);"></div>
+        <div style="flex: 1; background: rgba(239, 68, 68, 0.5);"></div>
+      </div>
+      <span>More content</span>
+      <button id="close-heatmap" style="margin-left: 12px; background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px;">Close</button>
+    `;
+    heatmapOverlay.appendChild(legend);
+
+    document.body.appendChild(heatmapOverlay);
+
+    // Add close button handler
+    document.getElementById('close-heatmap').addEventListener('click', toggleHeatmap);
+  }
+
+  function calculateContentDensity(gridSize, cellWidth, cellHeight) {
+    const densityGrid = Array(gridSize).fill(null).map(() => Array(gridSize).fill(0));
+    const widget = document.getElementById('performance-tracker-widget');
+    const heatmap = document.getElementById('perf-vibe-heatmap-overlay');
+
+    // Get all visible elements
+    const allElements = document.body.getElementsByTagName('*');
+
+    for (const element of allElements) {
+      // Skip our widget and heatmap elements
+      if (widget && widget.contains(element)) continue;
+      if (heatmap && heatmap.contains(element)) continue;
+      if (element.id === 'performance-tracker-widget') continue;
+      if (element.id === 'perf-vibe-heatmap-overlay') continue;
+
+      // Skip hidden elements
+      const style = window.getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+
+      const rect = element.getBoundingClientRect();
+
+      // Skip elements outside viewport or with no size
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+      if (rect.right < 0 || rect.left > window.innerWidth) continue;
+
+      // Calculate which grid cells this element overlaps
+      const startCol = Math.max(0, Math.floor(rect.left / cellWidth));
+      const endCol = Math.min(gridSize - 1, Math.floor(rect.right / cellWidth));
+      const startRow = Math.max(0, Math.floor(rect.top / cellHeight));
+      const endRow = Math.min(gridSize - 1, Math.floor(rect.bottom / cellHeight));
+
+      // Weight by element area (larger elements contribute more)
+      const area = rect.width * rect.height;
+      const weight = Math.min(1, area / (cellWidth * cellHeight * 4)) + 0.1;
+
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          densityGrid[row][col] += weight;
+        }
+      }
+    }
+
+    return densityGrid;
+  }
+
+  function getHeatmapColor(normalizedValue) {
+    // Color gradient: blue (low) -> green -> yellow -> red (high)
+    if (normalizedValue < 0.25) {
+      return `rgba(59, 130, 246, ${0.2 + normalizedValue * 1.2})`; // Blue
+    } else if (normalizedValue < 0.5) {
+      return `rgba(16, 185, 129, ${0.3 + normalizedValue * 0.8})`; // Green
+    } else if (normalizedValue < 0.75) {
+      return `rgba(245, 158, 11, ${0.4 + normalizedValue * 0.6})`; // Yellow/Orange
+    } else {
+      return `rgba(239, 68, 68, ${0.5 + normalizedValue * 0.4})`; // Red
+    }
+  }
+
+  function toggleHeatmap() {
+    if (isHeatmapVisible) {
+      // Hide heatmap
+      if (heatmapOverlay) {
+        heatmapOverlay.remove();
+        heatmapOverlay = null;
+      }
+      isHeatmapVisible = false;
+      const btn = document.getElementById('heatmap-toggle');
+      if (btn) btn.classList.remove('active');
+    } else {
+      // Show heatmap
+      createHeatmapOverlay();
+      isHeatmapVisible = true;
+      const btn = document.getElementById('heatmap-toggle');
+      if (btn) btn.classList.add('active');
+    }
   }
 
   function initializeExtension() {
