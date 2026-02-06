@@ -11,6 +11,7 @@ Track all critical Web Vitals and performance metrics:
 - **TTFB** - Time to First Byte
 - **FCP** - First Contentful Paint
 - **LCP** - Largest Contentful Paint (with candidate history)
+- **INP** - Interaction to Next Paint (worst interaction latency)
 - **TTI** - Time to Interactive
 - **TBT** - Total Blocking Time
 - **CLS** - Cumulative Layout Shift
@@ -113,6 +114,7 @@ Metrics are color-coded based on Google's Web Vitals thresholds:
 | TTFB | ≤800ms | ≤1800ms | >1800ms |
 | FCP | ≤1800ms | ≤3000ms | >3000ms |
 | LCP | ≤2500ms | ≤4000ms | >4000ms |
+| INP | ≤200ms | ≤500ms | >500ms |
 | TTI | ≤3800ms | ≤7300ms | >7300ms |
 | TBT | ≤200ms | ≤600ms | >600ms |
 | CLS | ≤0.1 | ≤0.25 | >0.25 |

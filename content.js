@@ -44,6 +44,7 @@
     'tti': null,
     'tbt': null,
     'cls': null,
+    'inp': null,
     'last-pixel-change': null
   };
   let navigationMetrics = {
@@ -56,6 +57,7 @@
     'tti': null,
     'tbt': null,
     'cls': null,
+    'inp': null,
     'last-pixel-change': null
   };
   
@@ -64,8 +66,10 @@
   let lcpObserver = null;
   let clsObserver = null;
   let longTaskObserver = null;
+  let inpObserver = null;
   let clsValue = 0;
   let longTasks = [];
+  let worstInp = 0; // Track worst interaction duration for INP
 
   // Timeline zoom and pan state
   let timelineZoom = {
@@ -103,6 +107,7 @@
     'tti': { good: 3800, needsImprovement: 7300 },
     'tbt': { good: 200, needsImprovement: 600 },
     'cls': { good: 0.1, needsImprovement: 0.25 },
+    'inp': { good: 200, needsImprovement: 500 },
     'dom-ready': { good: 1500, needsImprovement: 3000 },
     'load-complete': { good: 3000, needsImprovement: 6000 },
     'first-paint': { good: 1000, needsImprovement: 2500 },
@@ -225,6 +230,10 @@
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="cls"></span>Cumulative Layout Shift:</span>
           <span class="metric-value" id="cls">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label"><span class="metric-color-indicator" data-metric="inp"></span>Interaction to Next Paint:</span>
+          <span class="metric-value" id="inp">waiting...</span>
         </div>
         <div class="metric">
           <span class="metric-label"><span class="metric-color-indicator" data-metric="last-pixel-change"></span>Last Pixel Change:</span>
@@ -1323,6 +1332,7 @@
     'tti': '#6366f1',
     'tbt': '#ec4899',
     'cls': '#14b8a6',
+    'inp': '#f472b6',
     'last-pixel-change': '#06b6d4'
   };
 
@@ -1341,7 +1351,7 @@
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
     
     // Define all metric keys to ensure we display all of them
-    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'last-pixel-change'];
+    const metricKeys = ['ttfb', 'first-paint', 'fcp', 'dom-ready', 'lcp', 'load-complete', 'tti', 'tbt', 'cls', 'inp', 'last-pixel-change'];
     
     metricKeys.forEach(key => {
       const element = document.getElementById(key);
@@ -1352,7 +1362,8 @@
           const rating = getPerformanceRating(key, metrics[key]);
           element.className = 'metric-value ' + rating;
         } else {
-          element.textContent = '-';
+          // INP requires user interaction, show "waiting..." instead of "-"
+          element.textContent = key === 'inp' ? 'waiting...' : '-';
           element.className = 'metric-value';
         }
       }
@@ -1816,6 +1827,19 @@
         });
       });
       longTaskObserver.observe({ entryTypes: ['longtask'] });
+
+      // INP Observer - tracks interaction latency (worst interaction)
+      inpObserver = new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        entries.forEach((entry) => {
+          // Only count interactions with input (click, keydown, pointerdown, etc.)
+          if (entry.duration > worstInp) {
+            worstInp = entry.duration;
+            updateMetric('inp', worstInp, isNavigation);
+          }
+        });
+      });
+      inpObserver.observe({ type: 'event', durationThreshold: 16, buffered: true });
 
     } catch (e) {
       console.log('Some performance metrics not available:', e);
@@ -2483,12 +2507,14 @@
       'tti': null,
       'tbt': null,
       'cls': null,
+      'inp': null,
       'last-pixel-change': null
     };
-    
+
     // Reset global tracking variables for navigation
     clsValue = 0;
     longTasks = [];
+    worstInp = 0;
     
     // Update display if in navigation mode
     if (currentMode === 'navigation') {
