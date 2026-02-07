@@ -2959,7 +2959,23 @@
     }
 
     const data = getResourceData();
-    let resources = data.resources;
+    let resources = [...data.resources];
+
+    // Add the HTML document (navigation entry) as the first resource
+    const navigationEntries = performance.getEntriesByType('navigation');
+    if (navigationEntries.length > 0) {
+      const nav = navigationEntries[0];
+      resources.unshift({
+        name: nav.name || window.location.href,
+        initiatorType: 'navigation',
+        startTime: 0,
+        fetchStart: nav.fetchStart || 0,
+        responseEnd: nav.responseEnd || nav.loadEventEnd || 0,
+        duration: nav.responseEnd || nav.loadEventEnd || 0,
+        decodedBodySize: nav.decodedBodySize || 0,
+        transferSize: nav.transferSize || 0
+      });
+    }
 
     // Filter resources to only show those that started within the 8-second tracking window
     resources = resources.filter(r => (r.fetchStart || r.startTime) <= MAX_METRIC_DURATION);
@@ -3003,7 +3019,9 @@
       // Determine type for color coding
       let typeClass = 'other';
       const url = resource.name;
-      if (resource.initiatorType === 'script' || url.match(/\.js(\?|$)/i)) {
+      if (resource.initiatorType === 'navigation') {
+        typeClass = 'doc';
+      } else if (resource.initiatorType === 'script' || url.match(/\.js(\?|$)/i)) {
         typeClass = 'js';
       } else if (resource.initiatorType === 'link' || resource.initiatorType === 'css' || url.match(/\.css(\?|$)/i)) {
         typeClass = 'css';
@@ -3013,7 +3031,18 @@
         typeClass = 'font';
       }
 
-      const name = url.split('/').pop().split('?')[0] || url;
+      let name;
+      if (typeClass === 'doc') {
+        // For document, show path or "Document" if just root
+        try {
+          const urlObj = new URL(url);
+          name = urlObj.pathname === '/' ? '(document)' : urlObj.pathname;
+        } catch (e) {
+          name = '(document)';
+        }
+      } else {
+        name = url.split('/').pop().split('?')[0] || url;
+      }
       const truncatedName = name.length > 50 ? name.substring(0, 47) + '...' : name;
 
       // Extract domain/host from URL
@@ -3077,6 +3106,7 @@
         <div class="waterfall-header">
           <span class="waterfall-title">📊 Network Waterfall</span>
           <div class="waterfall-legend">
+            <span class="legend-item doc">Doc</span>
             <span class="legend-item js">JS</span>
             <span class="legend-item css">CSS</span>
             <span class="legend-item img">Images</span>
@@ -3096,7 +3126,7 @@
             ${visualChangeMarkers}
             ${lpcMarker}
           </div>
-          <div class="waterfall-scale-label">Time</div>
+          <div class="waterfall-scale-label">Start Time/Duration</div>
         </div>
         <div class="waterfall-content">
           ${resourceRows || '<div class="waterfall-empty">No resources loaded yet</div>'}
