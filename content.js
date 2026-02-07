@@ -2820,6 +2820,7 @@
 
   // Resource Timing / Network tracking functions
   let waterfallOverlay = null;
+  let waterfallSortMode = 'time'; // 'time' or 'size'
 
   function getResourceData() {
     const resources = performance.getEntriesByType('resource');
@@ -2980,8 +2981,21 @@
     // Filter resources to only show those that started within the 8-second tracking window
     resources = resources.filter(r => (r.fetchStart || r.startTime) <= MAX_METRIC_DURATION);
 
-    // Sort by start time (fetchStart for more accuracy)
-    resources.sort((a, b) => (a.fetchStart || a.startTime) - (b.fetchStart || b.startTime));
+    // Sort resources based on current sort mode
+    if (waterfallSortMode === 'size') {
+      // Sort by decoded size (largest first)
+      resources.sort((a, b) => (b.decodedBodySize || 0) - (a.decodedBodySize || 0));
+    } else if (waterfallSortMode === 'duration') {
+      // Sort by duration (longest first)
+      resources.sort((a, b) => {
+        const durationA = (a.responseEnd || (a.startTime + a.duration)) - (a.fetchStart || a.startTime);
+        const durationB = (b.responseEnd || (b.startTime + b.duration)) - (b.fetchStart || b.startTime);
+        return durationB - durationA;
+      });
+    } else {
+      // Sort by start time (fetchStart for more accuracy)
+      resources.sort((a, b) => (a.fetchStart || a.startTime) - (b.fetchStart || b.startTime));
+    }
 
     // Get the last pixel change time from the appropriate metrics object
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
@@ -3072,13 +3086,13 @@
         <div class="waterfall-row" data-url="${escapeHtml(url)}">
           <div class="waterfall-name" title="${escapeHtml(name)}">${escapeHtml(truncatedName)}</div>
           <div class="waterfall-domain" title="${escapeHtml(domain)}">${escapeHtml(truncatedDomain)}</div>
-          <div class="waterfall-size">${formatBytes(decodedSize)} / ${formatBytes(transferSize)}</div>
+          <div class="waterfall-size ${waterfallSortMode === 'size' ? 'sort-active' : ''}">${formatBytes(decodedSize)} / ${formatBytes(transferSize)}</div>
           <div class="waterfall-bar-container">
             ${rowVisualLines}
             ${lpcLine}
             <div class="waterfall-bar ${typeClass}" style="left: ${startPercent}%; width: ${widthPercent}%;" title="Start: ${startTimeSeconds}s, Duration: ${durationSeconds}s"></div>
           </div>
-          <div class="waterfall-time"><span class="waterfall-start">@${startTimeSeconds}s</span> ${durationSeconds}s</div>
+          <div class="waterfall-time ${waterfallSortMode === 'duration' ? 'sort-active' : ''}"><span class="waterfall-start">@${startTimeSeconds}s</span> ${durationSeconds}s</div>
         </div>
       `;
     });
@@ -3115,18 +3129,23 @@
             <span class="legend-item visual-change">👁 Visual</span>
             <span class="legend-item lpc">LPC</span>
           </div>
+          <div class="waterfall-sort-controls">
+            <button class="waterfall-sort-btn ${waterfallSortMode === 'size' ? 'active' : ''}" data-sort="size" title="Sort by Content Size">Sort by Content Size</button>
+            <button class="waterfall-sort-btn ${waterfallSortMode === 'duration' ? 'active' : ''}" data-sort="duration" title="Sort by Duration">Sort by Duration</button>
+            <button class="waterfall-sort-btn ${waterfallSortMode === 'time' ? 'active' : ''}" data-sort="time" title="Reset to Timeline">Reset</button>
+          </div>
           <button class="waterfall-close-btn" title="Close">✕</button>
         </div>
         <div class="waterfall-scale-row">
           <div class="waterfall-scale-label">Resource</div>
           <div class="waterfall-scale-label">Domain</div>
-          <div class="waterfall-scale-label">Size</div>
+          <div class="waterfall-scale-label ${waterfallSortMode === 'size' ? 'sort-active' : ''}">Content / Transferred Size</div>
           <div class="waterfall-time-scale">
             ${timeMarkers}
             ${visualChangeMarkers}
             ${lpcMarker}
           </div>
-          <div class="waterfall-scale-label">Start Time/Duration</div>
+          <div class="waterfall-scale-label ${waterfallSortMode === 'duration' ? 'sort-active' : ''}">Start Time/Duration</div>
         </div>
         <div class="waterfall-content">
           ${resourceRows || '<div class="waterfall-empty">No resources loaded yet</div>'}
@@ -3150,6 +3169,23 @@
         }
       });
     }
+
+    // Sort button events
+    const sortBtns = waterfallOverlay.querySelectorAll('.waterfall-sort-btn');
+    sortBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newSortMode = btn.dataset.sort;
+        if (newSortMode !== waterfallSortMode) {
+          waterfallSortMode = newSortMode;
+          // Re-render the waterfall chart with new sort mode
+          if (waterfallOverlay) {
+            waterfallOverlay.remove();
+            waterfallOverlay = null;
+          }
+          showWaterfallOverlay();
+        }
+      });
+    });
 
     // Click outside to close
     waterfallOverlay.addEventListener('click', (e) => {

@@ -1588,7 +1588,7 @@
 .waterfall-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 16px;
   padding: 16px 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -1639,6 +1639,36 @@
 .legend-item.doc {
   background: rgba(59, 130, 246, 0.3);
   color: #93c5fd;
+}
+
+.waterfall-sort-controls {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 12px;
+}
+
+.waterfall-sort-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.waterfall-sort-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+}
+
+.waterfall-sort-btn.active {
+  background: rgba(59, 130, 246, 0.5);
+  border-color: rgba(59, 130, 246, 0.8);
+  color: white;
 }
 
 .waterfall-close-btn {
@@ -1802,6 +1832,25 @@
   color: #94a3b8;
   font-size: 9px;
   margin-right: 4px;
+}
+
+/* Sort active column highlighting */
+.waterfall-scale-label.sort-active,
+.waterfall-size.sort-active,
+.waterfall-time.sort-active {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+#perf-vibe-waterfall-overlay.dark-mode .waterfall-scale-label.sort-active,
+#perf-vibe-waterfall-overlay.dark-mode .waterfall-size.sort-active,
+#perf-vibe-waterfall-overlay.dark-mode .waterfall-time.sort-active {
+  background: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
 }
 
 .waterfall-footer {
