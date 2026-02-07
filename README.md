@@ -45,6 +45,16 @@ Track all critical Web Vitals and performance metrics:
 - Color-coded grid: blue (less content) → green → yellow → red (more content)
 - Helps identify content-heavy areas that may impact performance
 
+### Network Waterfall
+- Comprehensive resource loading visualization
+- View all resources loaded within the first 8 seconds of page load
+- Columns: Resource name, Domain, Size (decoded/transferred), Timeline bar, Duration
+- Color-coded bars by resource type (JS, CSS, Images, Fonts, Other)
+- Visual change markers overlaid on timeline showing DOM mutations
+- Last Pixel Change (LPC) line showing when page stopped visually changing
+- Time scale automatically adjusts to ceiling of LPC value
+- Click "View Waterfall" button after 8-second collection period completes
+
 ### Soft Navigation Support
 - Automatic detection of SPA navigations (pushState, replaceState, popstate)
 - Separate metrics for page load vs navigation
@@ -56,6 +66,13 @@ Track all critical Web Vitals and performance metrics:
 - **Dark mode** - Toggle between light and dark themes
 - **Collapsible sections** - Minimize timeline, LCP history, or visual changes
 - **Responsive design** - Adapts to smaller screens
+
+### Resources Section
+- Real-time resource count and size tracking
+- Total decoded size and transferred size display
+- Breakdown by resource type (JS, CSS, Images, Fonts, Other)
+- "View Waterfall" button to open detailed network waterfall chart
+- Button shows spinner during 8-second collection period
 
 ### Recording Controls
 - **Start/Stop recording** - Pause metric collection on demand
@@ -101,6 +118,15 @@ Click the gear icon to access settings:
 - Click any item to highlight the element on the page
 - Items with 👁 icon indicate stability points
 - Items with LPC badge mark the last visual change
+
+### Network Waterfall Chart
+- Opens as a modal overlay when clicking "View Waterfall"
+- Shows resources sorted by start time
+- Hover over bars to see start time and duration details
+- Visual change lines (light cyan) show when DOM mutations occurred
+- LPC line (bold cyan) marks the Last Pixel Change timestamp
+- Legend shows resource type colors and visual markers
+- Click outside or press close button to dismiss
 
 ## Files
 
