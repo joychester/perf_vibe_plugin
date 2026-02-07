@@ -3139,7 +3139,7 @@
         <div class="waterfall-scale-row">
           <div class="waterfall-scale-label">Resource</div>
           <div class="waterfall-scale-label">Domain</div>
-          <div class="waterfall-scale-label ${waterfallSortMode === 'size' ? 'sort-active' : ''}">Content / Transferred Size</div>
+          <div class="waterfall-scale-label ${waterfallSortMode === 'size' ? 'sort-active' : ''}">Content / Transferred Size <span class="size-info-icon">ⓘ</span><div class="size-info-tooltip">Cross-origin resources may show 0B due to browser security restrictions. The server must include the <strong>Timing-Allow-Origin</strong> header for accurate sizes.</div></div>
           <div class="waterfall-time-scale">
             ${timeMarkers}
             ${visualChangeMarkers}
