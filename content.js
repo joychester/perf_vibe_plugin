@@ -266,6 +266,21 @@
           </div>
         </div>
       </div>
+      <div class="resources-section">
+        <div class="resources-header">
+          <span class="resources-title">📊 Resource Monitoring</span>
+          <div class="resources-controls">
+            <span class="resources-count" id="resources-count">0</span>
+            <button id="toggle-resources" class="toggle-resources-btn" title="Toggle resources">▼</button>
+          </div>
+        </div>
+        <div class="resources-container" id="resources-container">
+          <div class="resources-summary" id="resources-summary">
+            <div class="resources-loading">Loading resources...</div>
+          </div>
+          <button id="view-waterfall" class="view-waterfall-btn" disabled><span class="collecting-spinner"></span>Collecting...</button>
+        </div>
+      </div>
     </div>
     <div class="settings-overlay" id="settings-overlay" style="display: none;">
       <div class="settings-panel">
@@ -612,6 +627,25 @@
         historyContainer.style.display = isHistoryCollapsed ? 'none' : 'block';
         toggleHistory.textContent = isHistoryCollapsed ? '▶' : '▼';
       });
+    }
+
+    // Resources section controls
+    const toggleResources = document.getElementById('toggle-resources');
+    const resourcesContainer = document.getElementById('resources-container');
+    let isResourcesCollapsed = false;
+
+    if (toggleResources && resourcesContainer) {
+      toggleResources.addEventListener('click', () => {
+        isResourcesCollapsed = !isResourcesCollapsed;
+        resourcesContainer.style.display = isResourcesCollapsed ? 'none' : 'block';
+        toggleResources.textContent = isResourcesCollapsed ? '▶' : '▼';
+      });
+    }
+
+    // View Waterfall button
+    const viewWaterfallBtn = document.getElementById('view-waterfall');
+    if (viewWaterfallBtn) {
+      viewWaterfallBtn.addEventListener('click', showWaterfallOverlay);
     }
 
     // Make widget draggable
@@ -2784,6 +2818,379 @@
     updateMetric('dom-size', count, isNavigation);
   }
 
+  // Resource Timing / Network tracking functions
+  let waterfallOverlay = null;
+
+  function getResourceData() {
+    const resources = performance.getEntriesByType('resource');
+    const categorized = {
+      js: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
+      css: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
+      img: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
+      font: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
+      other: { count: 0, decodedSize: 0, transferSize: 0, items: [] }
+    };
+
+    let totalDecodedSize = 0;
+    let totalTransferSize = 0;
+
+    resources.forEach(resource => {
+      const url = resource.name;
+      const decodedSize = resource.decodedBodySize || 0;
+      const transferSize = resource.transferSize || 0;
+
+      totalDecodedSize += decodedSize;
+      totalTransferSize += transferSize;
+
+      const item = {
+        url: url,
+        name: url.split('/').pop().split('?')[0] || url,
+        decodedSize: decodedSize,
+        transferSize: transferSize,
+        startTime: resource.startTime,
+        duration: resource.duration,
+        initiatorType: resource.initiatorType
+      };
+
+      // Categorize by type
+      if (resource.initiatorType === 'script' || url.match(/\.js(\?|$)/i)) {
+        categorized.js.count++;
+        categorized.js.decodedSize += decodedSize;
+        categorized.js.transferSize += transferSize;
+        categorized.js.items.push(item);
+      } else if (resource.initiatorType === 'link' || resource.initiatorType === 'css' || url.match(/\.css(\?|$)/i)) {
+        categorized.css.count++;
+        categorized.css.decodedSize += decodedSize;
+        categorized.css.transferSize += transferSize;
+        categorized.css.items.push(item);
+      } else if (resource.initiatorType === 'img' || url.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|avif)(\?|$)/i)) {
+        categorized.img.count++;
+        categorized.img.decodedSize += decodedSize;
+        categorized.img.transferSize += transferSize;
+        categorized.img.items.push(item);
+      } else if (url.match(/\.(woff2?|ttf|otf|eot)(\?|$)/i)) {
+        categorized.font.count++;
+        categorized.font.decodedSize += decodedSize;
+        categorized.font.transferSize += transferSize;
+        categorized.font.items.push(item);
+      } else {
+        categorized.other.count++;
+        categorized.other.decodedSize += decodedSize;
+        categorized.other.transferSize += transferSize;
+        categorized.other.items.push(item);
+      }
+    });
+
+    return {
+      total: resources.length,
+      totalDecodedSize,
+      totalTransferSize,
+      categorized,
+      resources
+    };
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
+  }
+
+  function updateResourcesSummary() {
+    const summaryEl = document.getElementById('resources-summary');
+    const countEl = document.getElementById('resources-count');
+    if (!summaryEl) return;
+
+    const data = getResourceData();
+
+    // Update count badge
+    if (countEl) {
+      countEl.textContent = data.total;
+    }
+
+    const categories = [
+      { key: 'js', label: 'JS', icon: '📜' },
+      { key: 'css', label: 'CSS', icon: '🎨' },
+      { key: 'img', label: 'Images', icon: '🖼️' },
+      { key: 'font', label: 'Fonts', icon: '🔤' },
+      { key: 'other', label: 'Other', icon: '📦' }
+    ];
+
+    let categoryHtml = '';
+    categories.forEach((cat, index) => {
+      const catData = data.categorized[cat.key];
+      if (catData.count > 0) {
+        const isLast = index === categories.length - 1 ||
+          categories.slice(index + 1).every(c => data.categorized[c.key].count === 0);
+        const prefix = isLast ? '└─' : '├─';
+        categoryHtml += `
+          <div class="resource-category-row">
+            <span class="resource-tree-prefix">${prefix}</span>
+            <span class="resource-category-label">${cat.label}:</span>
+            <span class="resource-category-count">${catData.count}</span>
+            <span class="resource-category-size">(${formatBytes(catData.decodedSize)} / ${formatBytes(catData.transferSize)})</span>
+          </div>
+        `;
+      }
+    });
+
+    summaryEl.innerHTML = `
+      <div class="resources-total-row">
+        <span class="resources-total-count">${data.total} resources</span>
+      </div>
+      <div class="resources-size-row">
+        <span class="resources-size-label">Size:</span>
+        <span class="resources-size-value">${formatBytes(data.totalDecodedSize)}</span>
+        <span class="resources-size-transferred">(${formatBytes(data.totalTransferSize)} transferred)</span>
+      </div>
+      <div class="resources-breakdown">
+        ${categoryHtml}
+      </div>
+    `;
+  }
+
+  function showWaterfallOverlay() {
+    // Remove existing overlay
+    if (waterfallOverlay) {
+      waterfallOverlay.remove();
+      waterfallOverlay = null;
+    }
+
+    const data = getResourceData();
+    let resources = data.resources;
+
+    // Filter resources to only show those that started within the 8-second tracking window
+    resources = resources.filter(r => (r.fetchStart || r.startTime) <= MAX_METRIC_DURATION);
+
+    // Sort by start time (fetchStart for more accuracy)
+    resources.sort((a, b) => (a.fetchStart || a.startTime) - (b.fetchStart || b.startTime));
+
+    // Get the last pixel change time from the appropriate metrics object
+    const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
+    const lastPixelChangeTime = metrics['last-pixel-change'] || 0;
+
+    // Use ceiling of Last Pixel Change (in seconds) as the end time for the waterfall chart
+    // e.g., LPC = 3.1s → end time = 4s
+    // Fall back to max resource end time if LPC not yet available
+    const resourceMaxTime = Math.max(...resources.map(r => r.responseEnd || (r.startTime + r.duration)), 1);
+    const lpcCeiling = Math.ceil(lastPixelChangeTime / 1000) * 1000; // Ceiling to nearest second
+    const maxEndTime = lastPixelChangeTime > 0 ? lpcCeiling : Math.min(resourceMaxTime, MAX_METRIC_DURATION);
+
+    waterfallOverlay = document.createElement('div');
+    waterfallOverlay.id = 'perf-vibe-waterfall-overlay';
+    waterfallOverlay.className = widget.classList.contains('dark-mode') ? 'dark-mode' : '';
+
+    // Get all visual changes (within the extended time range)
+    const visualChanges = changeHistory
+      .filter(c => c.timestamp <= maxEndTime)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    let resourceRows = '';
+    resources.forEach((resource) => {
+      // Use fetchStart for accurate start time, fallback to startTime
+      const startTime = resource.fetchStart || resource.startTime;
+      // Use responseEnd for accurate end time
+      const endTime = resource.responseEnd || (resource.startTime + resource.duration);
+      const actualDuration = endTime - startTime;
+
+      const startPercent = (startTime / maxEndTime) * 100;
+      const widthPercent = Math.max((actualDuration / maxEndTime) * 100, 0.5);
+      const decodedSize = resource.decodedBodySize || 0;
+      const transferSize = resource.transferSize || 0;
+
+      // Determine type for color coding
+      let typeClass = 'other';
+      const url = resource.name;
+      if (resource.initiatorType === 'script' || url.match(/\.js(\?|$)/i)) {
+        typeClass = 'js';
+      } else if (resource.initiatorType === 'link' || resource.initiatorType === 'css' || url.match(/\.css(\?|$)/i)) {
+        typeClass = 'css';
+      } else if (resource.initiatorType === 'img' || url.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|avif)(\?|$)/i)) {
+        typeClass = 'img';
+      } else if (url.match(/\.(woff2?|ttf|otf|eot)(\?|$)/i)) {
+        typeClass = 'font';
+      }
+
+      const name = url.split('/').pop().split('?')[0] || url;
+      const truncatedName = name.length > 50 ? name.substring(0, 47) + '...' : name;
+
+      // Extract domain/host from URL
+      let domain = '';
+      try {
+        const urlObj = new URL(url);
+        domain = urlObj.hostname;
+      } catch (e) {
+        domain = url.split('/')[2] || '';
+      }
+      const truncatedDomain = domain.length > 30 ? domain.substring(0, 27) + '...' : domain;
+
+      // Show start time and duration in seconds
+      const startTimeSeconds = (startTime / 1000).toFixed(2);
+      const durationSeconds = (actualDuration / 1000).toFixed(2);
+
+      // Generate visual change lines for this row
+      const rowVisualLines = visualChanges.map(change => {
+        const percent = (change.timestamp / maxEndTime) * 100;
+        return `<div class="visual-change-line" style="left: ${percent}%"></div>`;
+      }).join('');
+
+      // Generate LPC line for this row (if available)
+      const lpcLine = lastPixelChangeTime > 0 ? `<div class="lpc-line" style="left: ${(lastPixelChangeTime / maxEndTime) * 100}%"></div>` : '';
+
+      resourceRows += `
+        <div class="waterfall-row" data-url="${escapeHtml(url)}">
+          <div class="waterfall-name" title="${escapeHtml(name)}">${escapeHtml(truncatedName)}</div>
+          <div class="waterfall-domain" title="${escapeHtml(domain)}">${escapeHtml(truncatedDomain)}</div>
+          <div class="waterfall-size">${formatBytes(decodedSize)} / ${formatBytes(transferSize)}</div>
+          <div class="waterfall-bar-container">
+            ${rowVisualLines}
+            ${lpcLine}
+            <div class="waterfall-bar ${typeClass}" style="left: ${startPercent}%; width: ${widthPercent}%;" title="Start: ${startTimeSeconds}s, Duration: ${durationSeconds}s"></div>
+          </div>
+          <div class="waterfall-time"><span class="waterfall-start">@${startTimeSeconds}s</span> ${durationSeconds}s</div>
+        </div>
+      `;
+    });
+
+    // Generate time scale markers with proper intervals (in seconds)
+    const timeMarkers = [0, 0.25, 0.5, 0.75, 1].map(fraction => {
+      const timeSeconds = (maxEndTime * fraction) / 1000;
+      return `<span class="time-marker" style="left: ${fraction * 100}%">${timeSeconds.toFixed(1)}s</span>`;
+    }).join('');
+
+    // Generate visual change markers for the time scale
+    const visualChangeMarkers = visualChanges.map(change => {
+      const percent = (change.timestamp / maxEndTime) * 100;
+      const timeSeconds = (change.timestamp / 1000).toFixed(2);
+      return `<div class="visual-change-line" style="left: ${percent}%" title="Visual change at ${timeSeconds}s"></div>`;
+    }).join('');
+
+    // Generate LPC marker for the time scale
+    const lpcMarker = lastPixelChangeTime > 0
+      ? `<div class="lpc-line" style="left: ${(lastPixelChangeTime / maxEndTime) * 100}%" title="Last Pixel Change at ${(lastPixelChangeTime / 1000).toFixed(2)}s"></div>`
+      : '';
+
+    waterfallOverlay.innerHTML = `
+      <div class="waterfall-panel">
+        <div class="waterfall-header">
+          <span class="waterfall-title">📊 Network Waterfall</span>
+          <div class="waterfall-legend">
+            <span class="legend-item js">JS</span>
+            <span class="legend-item css">CSS</span>
+            <span class="legend-item img">Images</span>
+            <span class="legend-item font">Fonts</span>
+            <span class="legend-item other">Other</span>
+            <span class="legend-item visual-change">👁 Visual</span>
+            <span class="legend-item lpc">LPC</span>
+          </div>
+          <button class="waterfall-close-btn" title="Close">✕</button>
+        </div>
+        <div class="waterfall-scale-row">
+          <div class="waterfall-scale-label">Resource</div>
+          <div class="waterfall-scale-label">Domain</div>
+          <div class="waterfall-scale-label">Size</div>
+          <div class="waterfall-time-scale">
+            ${timeMarkers}
+            ${visualChangeMarkers}
+            ${lpcMarker}
+          </div>
+          <div class="waterfall-scale-label">Time</div>
+        </div>
+        <div class="waterfall-content">
+          ${resourceRows || '<div class="waterfall-empty">No resources loaded yet</div>'}
+        </div>
+        <div class="waterfall-footer">
+          <span>Total: ${data.total} resources</span>
+          <span>Size: ${formatBytes(data.totalDecodedSize)} (${formatBytes(data.totalTransferSize)} transferred)</span>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(waterfallOverlay);
+
+    // Close button event
+    const closeBtn = waterfallOverlay.querySelector('.waterfall-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        if (waterfallOverlay) {
+          waterfallOverlay.remove();
+          waterfallOverlay = null;
+        }
+      });
+    }
+
+    // Click outside to close
+    waterfallOverlay.addEventListener('click', (e) => {
+      if (e.target === waterfallOverlay) {
+        waterfallOverlay.remove();
+        waterfallOverlay = null;
+      }
+    });
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Resource tracking state
+  let resourceObserver = null;
+  let resourceTrackingActive = true;
+
+  // Start resource tracking - stops after 8 seconds (MAX_METRIC_DURATION)
+  function startResourceTracking() {
+    // Initial update after a short delay
+    setTimeout(updateResourcesSummary, 500);
+
+    // Update when new resources are loaded (observe PerformanceObserver)
+    if (typeof PerformanceObserver !== 'undefined') {
+      try {
+        resourceObserver = new PerformanceObserver(() => {
+          if (resourceTrackingActive) {
+            updateResourcesSummary();
+          }
+        });
+        resourceObserver.observe({ entryTypes: ['resource'] });
+      } catch (e) {
+        // Fallback: update periodically until 8 seconds
+        const intervalId = setInterval(() => {
+          if (resourceTrackingActive) {
+            updateResourcesSummary();
+          }
+        }, 1000);
+        setTimeout(() => clearInterval(intervalId), MAX_METRIC_DURATION);
+      }
+    } else {
+      // Fallback: update periodically until 8 seconds
+      const intervalId = setInterval(() => {
+        if (resourceTrackingActive) {
+          updateResourcesSummary();
+        }
+      }, 1000);
+      setTimeout(() => clearInterval(intervalId), MAX_METRIC_DURATION);
+    }
+
+    // Stop resource tracking after 8 seconds (consistent with MAX_METRIC_DURATION)
+    setTimeout(() => {
+      resourceTrackingActive = false;
+      if (resourceObserver) {
+        resourceObserver.disconnect();
+      }
+      // Final update
+      updateResourcesSummary();
+
+      // Enable the View Waterfall button now that collection is complete
+      const waterfallBtn = widget.querySelector('#view-waterfall');
+      if (waterfallBtn) {
+        waterfallBtn.disabled = false;
+        waterfallBtn.textContent = 'View Waterfall';
+      }
+    }, MAX_METRIC_DURATION);
+  }
+
   // Heatmap visualization functions
   function createHeatmapOverlay() {
     // Remove existing overlay if any
@@ -2958,6 +3365,7 @@
     initPerformanceObservers(false);
     detectSoftNavigations();
     updateModeDisplay();
+    startResourceTracking();
     // Display initial metrics and timeline
     setTimeout(() => {
       updateDomSize(false); // Initial DOM size measurement
