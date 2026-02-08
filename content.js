@@ -2825,6 +2825,7 @@
   function getResourceData() {
     const resources = performance.getEntriesByType('resource');
     const categorized = {
+      doc: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
       js: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
       css: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
       img: { count: 0, decodedSize: 0, transferSize: 0, items: [] },
@@ -2834,6 +2835,30 @@
 
     let totalDecodedSize = 0;
     let totalTransferSize = 0;
+
+    // Include the HTML document (navigation entry)
+    const navigationEntries = performance.getEntriesByType('navigation');
+    if (navigationEntries.length > 0) {
+      const nav = navigationEntries[0];
+      const docDecodedSize = nav.decodedBodySize || 0;
+      const docTransferSize = nav.transferSize || 0;
+
+      totalDecodedSize += docDecodedSize;
+      totalTransferSize += docTransferSize;
+
+      categorized.doc.count = 1;
+      categorized.doc.decodedSize = docDecodedSize;
+      categorized.doc.transferSize = docTransferSize;
+      categorized.doc.items.push({
+        url: nav.name || window.location.href,
+        name: '(document)',
+        decodedSize: docDecodedSize,
+        transferSize: docTransferSize,
+        startTime: 0,
+        duration: nav.responseEnd || 0,
+        initiatorType: 'navigation'
+      });
+    }
 
     resources.forEach(resource => {
       const url = resource.name;
@@ -2883,7 +2908,7 @@
     });
 
     return {
-      total: resources.length,
+      total: resources.length + categorized.doc.count,
       totalDecodedSize,
       totalTransferSize,
       categorized,
@@ -2912,6 +2937,7 @@
     }
 
     const categories = [
+      { key: 'doc', label: 'Doc', icon: '📄' },
       { key: 'js', label: 'JS', icon: '📜' },
       { key: 'css', label: 'CSS', icon: '🎨' },
       { key: 'img', label: 'Images', icon: '🖼️' },
@@ -2997,9 +3023,10 @@
       resources.sort((a, b) => (a.fetchStart || a.startTime) - (b.fetchStart || b.startTime));
     }
 
-    // Get the last pixel change time from the appropriate metrics object
+    // Get the last pixel change time and LCP from the appropriate metrics object
     const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
     const lastPixelChangeTime = metrics['last-pixel-change'] || 0;
+    const lcpTime = metrics['lcp'] || 0;
 
     // Use ceiling of Last Pixel Change (in seconds) as the end time for the waterfall chart
     // e.g., LPC = 3.1s → end time = 4s
@@ -3082,6 +3109,9 @@
       // Generate LPC line for this row (if available)
       const lpcLine = lastPixelChangeTime > 0 ? `<div class="lpc-line" style="left: ${(lastPixelChangeTime / maxEndTime) * 100}%"></div>` : '';
 
+      // Generate LCP line for this row (if available)
+      const lcpLine = lcpTime > 0 ? `<div class="lcp-line" style="left: ${(lcpTime / maxEndTime) * 100}%"></div>` : '';
+
       resourceRows += `
         <div class="waterfall-row" data-url="${escapeHtml(url)}">
           <div class="waterfall-name" title="${escapeHtml(name)}">${escapeHtml(truncatedName)}</div>
@@ -3089,6 +3119,7 @@
           <div class="waterfall-size ${waterfallSortMode === 'size' ? 'sort-active' : ''}">${formatBytes(decodedSize)} / ${formatBytes(transferSize)}</div>
           <div class="waterfall-bar-container">
             ${rowVisualLines}
+            ${lcpLine}
             ${lpcLine}
             <div class="waterfall-bar ${typeClass}" style="left: ${startPercent}%; width: ${widthPercent}%;" title="Start: ${startTimeSeconds}s, Duration: ${durationSeconds}s"></div>
           </div>
@@ -3115,6 +3146,11 @@
       ? `<div class="lpc-line" style="left: ${(lastPixelChangeTime / maxEndTime) * 100}%" title="Last Pixel Change at ${(lastPixelChangeTime / 1000).toFixed(2)}s"></div>`
       : '';
 
+    // Generate LCP marker for the time scale
+    const lcpMarker = lcpTime > 0
+      ? `<div class="lcp-line" style="left: ${(lcpTime / maxEndTime) * 100}%" title="Largest Contentful Paint at ${(lcpTime / 1000).toFixed(2)}s"></div>`
+      : '';
+
     waterfallOverlay.innerHTML = `
       <div class="waterfall-panel">
         <div class="waterfall-header">
@@ -3127,6 +3163,7 @@
             <span class="legend-item font">Fonts</span>
             <span class="legend-item other">Other</span>
             <span class="legend-item visual-change">👁 Visual</span>
+            <span class="legend-item lcp">LCP</span>
             <span class="legend-item lpc">LPC</span>
           </div>
           <div class="waterfall-sort-controls">
@@ -3143,6 +3180,7 @@
           <div class="waterfall-time-scale">
             ${timeMarkers}
             ${visualChangeMarkers}
+            ${lcpMarker}
             ${lpcMarker}
           </div>
           <div class="waterfall-scale-label ${waterfallSortMode === 'duration' ? 'sort-active' : ''}">Start Time/Duration</div>

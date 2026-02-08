@@ -1969,6 +1969,29 @@
   font-weight: 600;
 }
 
+/* Largest Contentful Paint line */
+.lcp-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #f59e0b;
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.waterfall-time-scale .lcp-line {
+  top: 0;
+  bottom: 0;
+}
+
+.legend-item.lcp {
+  background: rgba(245, 158, 11, 0.5);
+  color: #f59e0b;
+  font-weight: 600;
+}
+
 /* ==================== DARK MODE STYLES ==================== */
 #performance-tracker-widget.dark-mode {
   background: rgba(30, 30, 35, 0.9);
@@ -2522,6 +2545,16 @@
 #perf-vibe-waterfall-overlay.dark-mode .legend-item.lpc {
   background: rgba(34, 211, 238, 0.4);
   color: #22d3ee;
+}
+
+#perf-vibe-waterfall-overlay.dark-mode .lcp-line {
+  background: #fbbf24;
+  opacity: 0.9;
+}
+
+#perf-vibe-waterfall-overlay.dark-mode .legend-item.lcp {
+  background: rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
 }
 
 #perf-vibe-waterfall-overlay.dark-mode .waterfall-content::-webkit-scrollbar-track {
