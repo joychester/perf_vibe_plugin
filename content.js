@@ -114,7 +114,7 @@
     'tbt': { good: 200, needsImprovement: 600 },
     'cls': { good: 0.1, needsImprovement: 0.25 },
     'inp': { good: 200, needsImprovement: 500 },
-    'dom-size': { good: 1500, needsImprovement: 3000 },
+    'dom-size': { good: 2500, needsImprovement: 4000 },
     'dom-ready': { good: 1500, needsImprovement: 3000 },
     'load-complete': { good: 3000, needsImprovement: 6000 },
     'first-paint': { good: 1000, needsImprovement: 2500 },
@@ -2924,6 +2924,15 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
   }
 
+  // Get color class for total resource size
+  // Thresholds: <2MB = good (green), <4MB = warning (orange), >=4MB = poor (red)
+  function getResourceSizeColor(bytes) {
+    const MB = 1024 * 1024;
+    if (bytes < 2 * MB) return 'good';
+    if (bytes < 4 * MB) return 'warning';
+    return 'poor';
+  }
+
   function updateResourcesSummary() {
     const summaryEl = document.getElementById('resources-summary');
     const countEl = document.getElementById('resources-count');
@@ -2963,13 +2972,15 @@
       }
     });
 
+    const sizeColorClass = getResourceSizeColor(data.totalDecodedSize);
+
     summaryEl.innerHTML = `
       <div class="resources-total-row">
         <span class="resources-total-count">${data.total} resources</span>
       </div>
       <div class="resources-size-row">
         <span class="resources-size-label">Size:</span>
-        <span class="resources-size-value">${formatBytes(data.totalDecodedSize)}</span>
+        <span class="resources-size-value resources-size-${sizeColorClass}">${formatBytes(data.totalDecodedSize)}</span>
         <span class="resources-size-transferred">(${formatBytes(data.totalTransferSize)} transferred)</span>
       </div>
       <div class="resources-breakdown">
