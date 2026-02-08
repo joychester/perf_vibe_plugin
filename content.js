@@ -1677,6 +1677,68 @@
     xAxisLine.className = 'x-axis-line';
     xAxisContainer.appendChild(xAxisLine);
 
+    // Activity Heat Strip - shows page activity intensity over time
+    // Using 500ms intervals (2 per second) for clear visual blocks
+    const INTERVAL_MS = 500;
+    const numBuckets = Math.max(1, Math.ceil(paddedMaxTime / INTERVAL_MS));
+    const densityBuckets = new Array(numBuckets).fill(0);
+
+    // Count metrics in each bucket (each metric = 1 point)
+    availableMetrics.forEach(metric => {
+      const time = metrics[metric.key];
+      const bucketIndex = Math.min(Math.floor(time / INTERVAL_MS), numBuckets - 1);
+      densityBuckets[bucketIndex] += 1;
+    });
+
+    // Count visual changes in each bucket (each change = 0.5 points)
+    changeHistory.forEach(change => {
+      if (change.timestamp <= paddedMaxTime) {
+        const bucketIndex = Math.min(Math.floor(change.timestamp / INTERVAL_MS), numBuckets - 1);
+        densityBuckets[bucketIndex] += 0.5;
+      }
+    });
+
+    // Create heat strip container
+    const heatStrip = document.createElement('div');
+    heatStrip.className = 'timeline-heat-strip';
+    heatStrip.style.width = `${effectiveWidth}px`;
+
+    // Create individual heat segments with absolute thresholds
+    // This makes it intuitive: 0=idle, 1=light, 2=moderate, 3+=busy, 4+=intense
+    densityBuckets.forEach((density, index) => {
+      const segment = document.createElement('div');
+      segment.className = 'heat-segment';
+
+      const segmentWidth = effectiveWidth / numBuckets;
+      segment.style.width = `${segmentWidth}px`;
+      segment.style.left = `${index * segmentWidth}px`;
+
+      // Absolute activity thresholds for intuitive understanding
+      let level;
+      if (density === 0) {
+        level = 'idle';
+      } else if (density < 1.5) {
+        level = 'light';
+      } else if (density < 2.5) {
+        level = 'moderate';
+      } else if (density < 4) {
+        level = 'busy';
+      } else {
+        level = 'intense';
+      }
+      segment.classList.add(`heat-${level}`);
+
+      // Tooltip showing time range and activity
+      const startTime = (index * INTERVAL_MS / 1000).toFixed(1);
+      const endTime = ((index + 1) * INTERVAL_MS / 1000).toFixed(1);
+      const activityCount = Math.round(density * 10) / 10;
+      segment.title = `${startTime}s - ${endTime}s: ${activityCount} events`;
+
+      heatStrip.appendChild(segment);
+    });
+
+    xAxisContainer.appendChild(heatStrip);
+
     // Calculate appropriate tick interval based on max time and zoom
     const numTicks = Math.max(4, Math.min(Math.floor(5 * timelineZoom.level), 10));
     const tickInterval = paddedMaxTime / numTicks;
