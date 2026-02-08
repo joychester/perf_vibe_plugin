@@ -1678,8 +1678,8 @@
     xAxisContainer.appendChild(xAxisLine);
 
     // Activity Heat Strip - shows page activity intensity over time
-    // Using 500ms intervals (2 per second) for clear visual blocks
-    const INTERVAL_MS = 500;
+    // Using 200ms intervals (5 per second) for balanced activity visualization
+    const INTERVAL_MS = 200;
     const numBuckets = Math.max(1, Math.ceil(paddedMaxTime / INTERVAL_MS));
     const densityBuckets = new Array(numBuckets).fill(0);
 
@@ -1703,8 +1703,11 @@
     heatStrip.className = 'timeline-heat-strip';
     heatStrip.style.width = `${effectiveWidth}px`;
 
-    // Create individual heat segments with absolute thresholds
-    // This makes it intuitive: 0=idle, 1=light, 2=moderate, 3+=busy, 4+=intense
+    // Find max density for scaling opacity
+    const maxDensity = Math.max(...densityBuckets, 1);
+
+    // Create individual heat segments - single red color with intensity based on activity
+    // More activity = darker/more opaque red (like layers stacking up)
     densityBuckets.forEach((density, index) => {
       const segment = document.createElement('div');
       segment.className = 'heat-segment';
@@ -1713,20 +1716,11 @@
       segment.style.width = `${segmentWidth}px`;
       segment.style.left = `${index * segmentWidth}px`;
 
-      // Absolute activity thresholds for intuitive understanding
-      let level;
-      if (density === 0) {
-        level = 'idle';
-      } else if (density < 1.5) {
-        level = 'light';
-      } else if (density < 2.5) {
-        level = 'moderate';
-      } else if (density < 4) {
-        level = 'busy';
-      } else {
-        level = 'intense';
-      }
-      segment.classList.add(`heat-${level}`);
+      // Calculate opacity based on activity (0.1 min for visibility, 1.0 max)
+      // Use square root for better visual distribution (makes low values more visible)
+      const normalizedDensity = density / maxDensity;
+      const opacity = density === 0 ? 0.08 : 0.15 + (Math.sqrt(normalizedDensity) * 0.85);
+      segment.style.opacity = opacity.toFixed(2);
 
       // Tooltip showing time range and activity
       const startTime = (index * INTERVAL_MS / 1000).toFixed(1);
