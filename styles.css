@@ -1475,6 +1475,19 @@
   color: #1e293b;
 }
 
+/* Resource size thresholds: <2MB good, <4MB warning, >=4MB poor */
+.resources-size-value.resources-size-good {
+  color: #22c55e;
+}
+
+.resources-size-value.resources-size-warning {
+  color: #f97316;
+}
+
+.resources-size-value.resources-size-poor {
+  color: #ef4444;
+}
+
 .resources-size-transferred {
   color: #64748b;
   font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
@@ -2433,6 +2446,18 @@
 
 #performance-tracker-widget.dark-mode .resources-size-value {
   color: #e5e5e5;
+}
+
+#performance-tracker-widget.dark-mode .resources-size-value.resources-size-good {
+  color: #4ade80;
+}
+
+#performance-tracker-widget.dark-mode .resources-size-value.resources-size-warning {
+  color: #fb923c;
+}
+
+#performance-tracker-widget.dark-mode .resources-size-value.resources-size-poor {
+  color: #f87171;
 }
 
 #performance-tracker-widget.dark-mode .resources-size-transferred {
