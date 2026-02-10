@@ -69,9 +69,25 @@
   let clsObserver = null;
   let longTaskObserver = null;
   let inpObserver = null;
+  let customMetricObserver = null;
   let clsValue = 0;
   let longTasks = [];
   let worstInp = 0; // Track worst interaction duration for INP
+
+  // Custom metrics tracking
+  let customMetricNames = []; // List of custom metric names to track
+  let customMarks = []; // Array of { name, timestamp }
+  let customMeasures = []; // Array of { name, startTime, duration }
+
+  // Load custom metric names from localStorage
+  function loadCustomMetricNames() {
+    const saved = localStorage.getItem('perf-vibe-custom-metrics');
+    if (saved) {
+      customMetricNames = saved.split('\n').map(n => n.trim()).filter(n => n);
+    }
+    return customMetricNames;
+  }
+  loadCustomMetricNames();
 
   // Timeline zoom and pan state
   let timelineZoom = {
@@ -301,6 +317,11 @@
             <p class="settings-hint">Enter domains to ignore (one per line). The plugin will not track metrics on these domains.</p>
             <textarea id="domain-ignore-list" class="domain-ignore-textarea" placeholder="example.com&#10;subdomain.example.org"></textarea>
           </div>
+          <div class="settings-section">
+            <label class="settings-label">Custom Metrics</label>
+            <p class="settings-hint">Enter performance.mark() or performance.measure() names to track (one per line). Matching metrics will appear on the timeline.</p>
+            <textarea id="custom-metrics-list" class="custom-metrics-textarea" placeholder="my-app-ready&#10;api-response-time&#10;component-render"></textarea>
+          </div>
           <div class="settings-actions">
             <button id="save-settings" class="settings-save-btn">Save</button>
           </div>
@@ -444,6 +465,7 @@
     const settingsOverlay = document.getElementById('settings-overlay');
     const closeSettings = document.getElementById('close-settings');
     const domainIgnoreList = document.getElementById('domain-ignore-list');
+    const customMetricsList = document.getElementById('custom-metrics-list');
     const saveSettings = document.getElementById('save-settings');
     const settingsStatus = document.getElementById('settings-status');
     const currentDomainEl = document.getElementById('current-domain');
@@ -490,6 +512,12 @@
       const savedDomains = localStorage.getItem('perf-vibe-ignored-domains');
       if (savedDomains && domainIgnoreList) {
         domainIgnoreList.value = savedDomains;
+      }
+
+      // Load saved custom metrics list
+      const savedCustomMetrics = localStorage.getItem('perf-vibe-custom-metrics');
+      if (savedCustomMetrics && customMetricsList) {
+        customMetricsList.value = savedCustomMetrics;
       }
 
       // Quick add current domain button
@@ -546,24 +574,16 @@
           const domains = domainIgnoreList.value.trim();
           localStorage.setItem('perf-vibe-ignored-domains', domains);
 
-          // Show success message
-          settingsStatus.textContent = 'Settings saved!';
-          settingsStatus.className = 'settings-status success';
+          // Save custom metrics list
+          const customMetrics = customMetricsList ? customMetricsList.value.trim() : '';
+          localStorage.setItem('perf-vibe-custom-metrics', customMetrics);
 
-          // Check if current domain is now ignored
-          const currentDomain = window.location.hostname;
-          const ignoredDomains = domains.split('\n').map(d => d.trim().toLowerCase()).filter(d => d);
-          const isIgnored = ignoredDomains.some(d => currentDomain.includes(d) || d.includes(currentDomain));
+          // Reload custom metric names and reinitialize observer
+          loadCustomMetricNames();
+          initCustomMetricObserver();
 
-          if (isIgnored && isRecording) {
-            settingsStatus.textContent = 'Settings saved! This domain is now ignored. Reload to apply.';
-            settingsStatus.className = 'settings-status info';
-          }
-
-          // Hide status after 3 seconds
-          setTimeout(() => {
-            settingsStatus.className = 'settings-status';
-          }, 3000);
+          // Close settings panel
+          closeSettingsPanel();
         });
       }
     }
@@ -1667,6 +1687,57 @@
       content.appendChild(changeLine);
     });
 
+    // Draw custom measure overlays (time ranges with light background)
+    customMeasures.forEach((measure, index) => {
+      const startPos = (measure.startTime / paddedMaxTime) * effectiveWidth;
+      const endPos = ((measure.startTime + measure.duration) / paddedMaxTime) * effectiveWidth;
+      const width = Math.max(endPos - startPos, 2); // Minimum 2px width
+
+      const measureOverlay = document.createElement('div');
+      measureOverlay.className = 'custom-measure-overlay';
+      measureOverlay.style.left = `${startPos}px`;
+      measureOverlay.style.width = `${width}px`;
+      // Cycle through colors for multiple measures
+      const colors = ['rgba(139, 92, 246, 0.15)', 'rgba(34, 197, 94, 0.15)', 'rgba(249, 115, 22, 0.15)', 'rgba(236, 72, 153, 0.15)'];
+      measureOverlay.style.backgroundColor = colors[index % colors.length];
+      measureOverlay.title = `${measure.name}: ${formatTime(measure.startTime)} → ${formatTime(measure.startTime + measure.duration)} (${formatTime(measure.duration)})`;
+
+      // Add measure label
+      const measureLabel = document.createElement('div');
+      measureLabel.className = 'custom-measure-label';
+      measureLabel.textContent = measure.name;
+      measureOverlay.appendChild(measureLabel);
+
+      content.appendChild(measureOverlay);
+    });
+
+    // Draw custom mark pins
+    customMarks.forEach((mark, index) => {
+      const position = (mark.timestamp / paddedMaxTime) * effectiveWidth;
+
+      // Create pin marker
+      const markPin = document.createElement('div');
+      markPin.className = 'custom-mark-pin';
+      markPin.style.left = `${position}px`;
+      // Cycle through colors for multiple marks
+      const colors = ['#8b5cf6', '#22c55e', '#f97316', '#ec4899', '#06b6d4'];
+      markPin.style.setProperty('--pin-color', colors[index % colors.length]);
+      markPin.title = `${mark.name}: ${formatTime(mark.timestamp)}`;
+
+      // Pin head
+      const pinHead = document.createElement('div');
+      pinHead.className = 'custom-mark-pin-head';
+      markPin.appendChild(pinHead);
+
+      // Pin label
+      const pinLabel = document.createElement('div');
+      pinLabel.className = 'custom-mark-pin-label';
+      pinLabel.textContent = mark.name;
+      markPin.appendChild(pinLabel);
+
+      content.appendChild(markPin);
+    });
+
     // Create x-axis with time labels
     const xAxisContainer = document.createElement('div');
     xAxisContainer.className = 'timeline-x-axis';
@@ -1969,6 +2040,86 @@
 
     } catch (e) {
       console.log('Some performance metrics not available:', e);
+    }
+  }
+
+  // Initialize custom metric observer for user-defined marks and measures
+  function initCustomMetricObserver() {
+    // Disconnect existing observer
+    if (customMetricObserver) {
+      try { customMetricObserver.disconnect(); } catch(e) {}
+    }
+
+    // Clear existing custom metrics
+    customMarks = [];
+    customMeasures = [];
+
+    // If no custom metrics configured, skip
+    if (customMetricNames.length === 0) {
+      renderTimeline();
+      return;
+    }
+
+    try {
+      // Check for existing marks/measures that were recorded before observer started
+      const existingMarks = performance.getEntriesByType('mark');
+      const existingMeasures = performance.getEntriesByType('measure');
+
+      existingMarks.forEach(entry => {
+        if (customMetricNames.some(name => entry.name.includes(name) || name.includes(entry.name))) {
+          customMarks.push({
+            name: entry.name,
+            timestamp: entry.startTime
+          });
+        }
+      });
+
+      existingMeasures.forEach(entry => {
+        if (customMetricNames.some(name => entry.name.includes(name) || name.includes(entry.name))) {
+          customMeasures.push({
+            name: entry.name,
+            startTime: entry.startTime,
+            duration: entry.duration
+          });
+        }
+      });
+
+      // Create observer for new marks and measures
+      customMetricObserver = new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        entries.forEach((entry) => {
+          // Check if this entry matches any custom metric name (partial match)
+          const isMatch = customMetricNames.some(name =>
+            entry.name.includes(name) || name.includes(entry.name)
+          );
+
+          if (isMatch) {
+            if (entry.entryType === 'mark') {
+              customMarks.push({
+                name: entry.name,
+                timestamp: entry.startTime
+              });
+            } else if (entry.entryType === 'measure') {
+              customMeasures.push({
+                name: entry.name,
+                startTime: entry.startTime,
+                duration: entry.duration
+              });
+            }
+            // Re-render timeline to show new custom metrics
+            renderTimeline();
+          }
+        });
+      });
+
+      customMetricObserver.observe({ entryTypes: ['mark', 'measure'] });
+
+      // Re-render timeline if we found existing metrics
+      if (customMarks.length > 0 || customMeasures.length > 0) {
+        renderTimeline();
+      }
+    } catch (e) {
+      console.log('Custom metrics observer not available:', e);
     }
   }
 
@@ -3534,6 +3685,7 @@
     initializeColorIndicators();
     trackPageLoad();
     initPerformanceObservers(false);
+    initCustomMetricObserver();
     detectSoftNavigations();
     updateModeDisplay();
     startResourceTracking();
