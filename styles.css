@@ -506,6 +506,108 @@
   top: -42px !important;
 }
 
+/* Custom Metrics - Measure overlays (time ranges) */
+.custom-measure-overlay {
+  position: absolute;
+  bottom: 26px;
+  height: 50px;
+  border-radius: 3px;
+  z-index: 0;
+  pointer-events: auto;
+  cursor: help;
+  border-left: 2px solid rgba(139, 92, 246, 0.4);
+  border-right: 2px solid rgba(139, 92, 246, 0.4);
+}
+
+.custom-measure-overlay:hover {
+  filter: brightness(1.2);
+}
+
+.custom-measure-label {
+  position: absolute;
+  top: -16px;
+  left: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #8b5cf6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* Custom Metrics - Mark pins */
+.custom-mark-pin {
+  position: absolute;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 4;
+  cursor: help;
+  --pin-color: #8b5cf6;
+}
+
+.custom-mark-pin-head {
+  width: 10px;
+  height: 10px;
+  background: var(--pin-color);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.custom-mark-pin-head::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+}
+
+.custom-mark-pin::before {
+  content: '';
+  position: absolute;
+  bottom: -50px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: 50px;
+  background: var(--pin-color);
+  opacity: 0.5;
+}
+
+.custom-mark-pin-label {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pin-color);
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 1px 4px;
+  border-radius: 2px;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.custom-mark-pin:hover .custom-mark-pin-head {
+  transform: rotate(-45deg) scale(1.2);
+}
+
+.custom-mark-pin:hover .custom-mark-pin-label {
+  max-width: none;
+}
+
 /* X-Axis styling */
 .timeline-x-axis {
   position: absolute;
@@ -1331,6 +1433,30 @@
   color: #9ca3af;
 }
 
+.custom-metrics-textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 11px;
+  resize: vertical;
+  background: #f9fafb;
+  color: #333;
+  box-sizing: border-box;
+}
+
+.custom-metrics-textarea:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+.custom-metrics-textarea::placeholder {
+  color: #9ca3af;
+}
+
 .settings-actions {
   display: flex;
   justify-content: flex-end;
@@ -2124,6 +2250,16 @@
   background: linear-gradient(180deg, #fecaca 0%, #fca5a5 100%);
 }
 
+/* Dark mode custom metrics */
+#performance-tracker-widget.dark-mode .custom-measure-label {
+  background: rgba(30, 30, 35, 0.9);
+  color: #a78bfa;
+}
+
+#performance-tracker-widget.dark-mode .custom-mark-pin-label {
+  background: rgba(30, 30, 35, 0.9);
+}
+
 #performance-tracker-widget.dark-mode .metric {
   border-bottom-color: #3f3f46;
 }
@@ -2386,6 +2522,21 @@
 }
 
 #performance-tracker-widget.dark-mode .domain-ignore-textarea::placeholder {
+  color: #52525b;
+}
+
+#performance-tracker-widget.dark-mode .custom-metrics-textarea {
+  background: #27272a;
+  border-color: #3f3f46;
+  color: #e5e5e5;
+}
+
+#performance-tracker-widget.dark-mode .custom-metrics-textarea:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.2);
+}
+
+#performance-tracker-widget.dark-mode .custom-metrics-textarea::placeholder {
   color: #52525b;
 }
 
