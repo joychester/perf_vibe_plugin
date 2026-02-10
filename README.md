@@ -26,6 +26,14 @@ Track all critical Web Vitals and performance metrics:
 - Color-coded bars (green/yellow/red) based on performance thresholds
 - Zoom and pan support (drag to zoom, scroll to pan, double-click to reset)
 - Visual change markers with count badges
+- **Activity Heat Strip** - Red gradient strip below the timeline showing page activity intensity over time (200ms intervals)
+
+### Custom Metrics
+- Track your own `performance.mark()` and `performance.measure()` calls
+- Configure metric names in Settings (partial name matching supported)
+- **Marks** display as colored pin markers on the timeline
+- **Measures** display as purple range overlays above the bars showing duration
+- Hover to see metric name and timing details
 
 ### Visual Changes Tracking
 - Real-time tracking of DOM mutations
@@ -49,9 +57,11 @@ Track all critical Web Vitals and performance metrics:
 - Comprehensive resource loading visualization
 - View all resources loaded within the first 8 seconds of page load
 - Columns: Resource name, Domain, Size (decoded/transferred), Timeline bar, Duration
-- Color-coded bars by resource type (JS, CSS, Images, Fonts, Other)
+- Color-coded bars by resource type (JS, CSS, Images, Fonts, Documents, Other)
 - Visual change markers overlaid on timeline showing DOM mutations
-- Last Pixel Change (LPC) line showing when page stopped visually changing
+- **LCP line** (orange) - Shows when Largest Contentful Paint occurred
+- **LPC line** (cyan) - Shows when page stopped visually changing
+- Sort by Time, Size, or Duration
 - Time scale automatically adjusts to ceiling of LPC value
 - Click "View Waterfall" button after 8-second collection period completes
 
@@ -70,6 +80,7 @@ Track all critical Web Vitals and performance metrics:
 ### Resources Section
 - Real-time resource count and size tracking
 - Total decoded size and transferred size display
+- **Size thresholds with color indicators**: Green (<2MB), Orange (<4MB), Red (≥4MB)
 - Breakdown by resource type (JS, CSS, Images, Fonts, Other)
 - "View Waterfall" button to open detailed network waterfall chart
 - Button shows spinner during 8-second collection period
@@ -106,7 +117,8 @@ Once installed, the widget automatically appears on every page.
 Click the gear icon to access settings:
 - **Quick Add Domain**: Shows current domain with one-click add button
 - **Domain Ignore List**: Enter domains (one per line) to block tracking
-- Changes require page reload to take effect
+- **Custom Metrics**: Enter performance mark/measure names to track on the timeline
+- Settings save immediately and close the panel
 
 ### Timeline Interactions
 - **Drag** to select and zoom into a time range
@@ -121,9 +133,10 @@ Click the gear icon to access settings:
 
 ### Network Waterfall Chart
 - Opens as a modal overlay when clicking "View Waterfall"
-- Shows resources sorted by start time
+- Shows resources sorted by start time (sortable by Size or Duration)
 - Hover over bars to see start time and duration details
 - Visual change lines (light cyan) show when DOM mutations occurred
+- LCP line (orange) marks the Largest Contentful Paint timestamp
 - LPC line (bold cyan) marks the Last Pixel Change timestamp
 - Legend shows resource type colors and visual markers
 - Click outside or press close button to dismiss
@@ -151,7 +164,8 @@ Metrics are color-coded based on Google's Web Vitals thresholds:
 | TTI | ≤3800ms | ≤7300ms | >7300ms |
 | TBT | ≤200ms | ≤600ms | >600ms |
 | CLS | ≤0.1 | ≤0.25 | >0.25 |
-| DOM Elements | ≤1,500 | ≤3,000 | >3,000 |
+| DOM Elements | ≤2,500 | ≤4,000 | >4,000 |
+| Total Resources | <2MB | <4MB | ≥4MB |
 
 ## Browser Support
 
