@@ -2794,6 +2794,11 @@
     longTasks = [];
     worstInp = 0;
 
+    // Clear visual change history and LCP candidates for fresh navigation tracking
+    changeHistory.length = 0;
+    lcpCandidates.length = 0;
+    lastChangeTimestamp = 0;
+
     // Automatically switch to navigation mode when soft navigation is detected
     currentMode = 'navigation';
     updateModeDisplay();
