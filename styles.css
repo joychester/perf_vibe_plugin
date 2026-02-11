@@ -506,10 +506,10 @@
   top: -42px !important;
 }
 
-/* Custom Metrics - Measure overlays (time ranges) - positioned above bars */
+/* Custom Metrics - Measure overlays (time ranges) - positioned at top of timeline */
 .custom-measure-overlay {
   position: absolute;
-  top: 5px;
+  top: 0;
   height: 14px;
   border-radius: 2px;
   z-index: 10;
@@ -527,7 +527,7 @@
 
 .custom-measure-label {
   position: absolute;
-  top: -1px;
+  top: 1px;
   left: 4px;
   font-size: 8px;
   font-weight: 700;
@@ -540,12 +540,12 @@
   text-shadow: 0 0 2px rgba(255, 255, 255, 0.8);
 }
 
-/* Custom Metrics - Mark pins */
+/* Custom Metrics - Mark pins - positioned at top of timeline */
 .custom-mark-pin {
   position: absolute;
-  bottom: 26px;
+  top: 0;
   transform: translateX(-50%);
-  z-index: 4;
+  z-index: 11;
   cursor: help;
   --pin-color: #8b5cf6;
 }
@@ -575,18 +575,18 @@
 .custom-mark-pin::before {
   content: '';
   position: absolute;
-  bottom: -50px;
+  top: 10px;
   left: 50%;
   transform: translateX(-50%);
   width: 1px;
-  height: 50px;
+  height: 70px;
   background: var(--pin-color);
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .custom-mark-pin-label {
   position: absolute;
-  top: -20px;
+  top: -16px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 9px;

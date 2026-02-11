@@ -2794,10 +2794,20 @@
     longTasks = [];
     worstInp = 0;
 
-    // Update display if in navigation mode
-    if (currentMode === 'navigation') {
-      updateModeDisplay();
-      displayMetrics();
+    // Automatically switch to navigation mode when soft navigation is detected
+    currentMode = 'navigation';
+    updateModeDisplay();
+    displayMetrics();
+
+    // Ensure timeline is visible and updated
+    const timelineContainer = document.getElementById('timeline-container');
+    if (timelineContainer) {
+      timelineContainer.style.display = 'block';
+      const toggleBtn = document.getElementById('toggle-timeline');
+      if (toggleBtn) {
+        toggleBtn.textContent = '▼';
+      }
+      renderTimeline();
     }
 
     // Update DOM size after navigation settles
