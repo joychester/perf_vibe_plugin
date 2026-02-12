@@ -173,15 +173,15 @@
 }
 
 .widget-content {
-  padding: 12px 16px;
+  padding: 12px 10px;
   max-height: 500px;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.5);
 }
 
 .timeline-section {
-  margin-bottom: 16px;
-  padding-bottom: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 2px solid #f0f0f0;
 }
 
@@ -189,7 +189,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .timeline-title {
@@ -252,12 +252,12 @@
 
 .timeline-chart {
   position: relative;
-  height: 120px;
-  margin-bottom: 8px;
+  height: 100px;
+  margin-bottom: 2px;
   background: linear-gradient(to bottom, #f9fafb 0%, #ffffff 100%);
   border: 1px solid #e5e7eb;
   border-radius: 6px;
-  padding: 8px;
+  padding: 2px 2px;
   overflow: hidden;
   cursor: crosshair;
   user-select: none;
@@ -280,9 +280,9 @@
 /* Uses single red color with opacity for intensity - darker = more activity */
 .timeline-heat-strip {
   position: absolute;
-  top: 2px;
+  top: 0;
   left: 0;
-  height: 10px;
+  height: 8px;
   z-index: 0;
 }
 
@@ -305,7 +305,7 @@
 .timeline-selection {
   position: absolute;
   top: 0;
-  bottom: 26px;
+  bottom: 22px;
   background: rgba(99, 102, 241, 0.2);
   border: 1px solid rgba(99, 102, 241, 0.5);
   border-radius: 3px;
@@ -315,10 +315,10 @@
 }
 
 .timeline-hint {
-  font-size: 9px;
-  color: #9ca3af;
+  font-size: 8px;
+  color: #b0b5bc;
   text-align: center;
-  margin-top: 4px;
+  margin-top: 0;
   font-style: italic;
 }
 
@@ -341,7 +341,7 @@
 
 .timeline-axis {
   position: absolute;
-  bottom: 26px;
+  bottom: 22px;
   left: 0;
   height: 1px;
   background: transparent;
@@ -350,7 +350,7 @@
 
 .timeline-bar {
   position: absolute;
-  bottom: 26px;
+  bottom: 22px;
   width: 4px;
   height: 50px;
   transform: translateX(-50%);
@@ -430,7 +430,7 @@
 
 .timeline-line {
   position: absolute;
-  bottom: 26px;
+  bottom: 22px;
   width: 1px;
   height: 35px;
   transform: translateX(-50%);
@@ -441,7 +441,7 @@
 /* Visual change bars on timeline */
 .timeline-change-bar {
   position: absolute;
-  bottom: 26px;
+  bottom: 22px;
   width: 3px;
   height: 25px !important;
   transform: translateX(-50%);
@@ -509,8 +509,8 @@
 /* Performance threshold background zones */
 .perf-threshold-zone {
   position: absolute;
-  bottom: 26px;
-  height: calc(100% - 50px);
+  bottom: 22px;
+  height: calc(100% - 34px);
   z-index: 0;
   pointer-events: none;
   border-radius: 2px;
@@ -634,9 +634,9 @@
 /* X-Axis styling */
 .timeline-x-axis {
   position: absolute;
-  bottom: 0;
+  bottom: 4px;
   left: 0;
-  height: 24px;
+  height: 18px;
 }
 
 .x-axis-line {
@@ -644,7 +644,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
+  height: 1px;
   background: linear-gradient(to right, #9ca3af, #d1d5db);
 }
 
@@ -652,16 +652,16 @@
   position: absolute;
   top: 0;
   width: 1px;
-  height: 6px;
+  height: 4px;
   background: #9ca3af;
   transform: translateX(-50%);
 }
 
 .x-axis-label {
   position: absolute;
-  top: 8px;
+  top: 5px;
   transform: translateX(-50%);
-  font-size: 9px;
+  font-size: 8px;
   font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
   color: #6b7280;
   white-space: nowrap;
