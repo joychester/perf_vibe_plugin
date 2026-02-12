@@ -506,6 +506,28 @@
   top: -42px !important;
 }
 
+/* Performance threshold background zones */
+.perf-threshold-zone {
+  position: absolute;
+  bottom: 26px;
+  height: calc(100% - 50px);
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+.perf-threshold-zone.good-zone {
+  background: linear-gradient(to right, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.08));
+}
+
+.perf-threshold-zone.needs-improvement-zone {
+  background: linear-gradient(to right, rgba(234, 179, 8, 0.12), rgba(234, 179, 8, 0.08));
+}
+
+.perf-threshold-zone.poor-zone {
+  background: linear-gradient(to right, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.08));
+}
+
 /* Custom Metrics - Measure overlays (time ranges) - positioned at top of timeline */
 .custom-measure-overlay {
   position: absolute;
@@ -2249,6 +2271,19 @@
 /* Dark mode heat strip - lighter red for visibility on dark background */
 #performance-tracker-widget.dark-mode .heat-segment {
   background: linear-gradient(180deg, #fecaca 0%, #fca5a5 100%);
+}
+
+/* Dark mode performance threshold zones */
+#performance-tracker-widget.dark-mode .perf-threshold-zone.good-zone {
+  background: linear-gradient(to right, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.08));
+}
+
+#performance-tracker-widget.dark-mode .perf-threshold-zone.needs-improvement-zone {
+  background: linear-gradient(to right, rgba(234, 179, 8, 0.15), rgba(234, 179, 8, 0.08));
+}
+
+#performance-tracker-widget.dark-mode .perf-threshold-zone.poor-zone {
+  background: linear-gradient(to right, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
 }
 
 /* Dark mode custom metrics */

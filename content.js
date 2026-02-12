@@ -1539,6 +1539,34 @@
     axis.style.width = `${effectiveWidth}px`;
     content.appendChild(axis);
 
+    // Add performance threshold background zones
+    // Green: 0-2.5s, Yellow: 2.5s-4.5s, Red: 4.5s-8s
+    const thresholdZones = [
+      { start: 0, end: 2500, className: 'good-zone' },
+      { start: 2500, end: 4500, className: 'needs-improvement-zone' },
+      { start: 4500, end: 8000, className: 'poor-zone' }
+    ];
+
+    thresholdZones.forEach(zone => {
+      // Only render zone if it falls within the timeline range
+      if (zone.start >= paddedMaxTime) return;
+
+      const zoneStart = zone.start;
+      const zoneEnd = Math.min(zone.end, paddedMaxTime);
+
+      const startPos = (zoneStart / paddedMaxTime) * effectiveWidth;
+      const endPos = (zoneEnd / paddedMaxTime) * effectiveWidth;
+      const width = endPos - startPos;
+
+      if (width > 0) {
+        const zoneElement = document.createElement('div');
+        zoneElement.className = `perf-threshold-zone ${zone.className}`;
+        zoneElement.style.left = `${startPos}px`;
+        zoneElement.style.width = `${width}px`;
+        content.appendChild(zoneElement);
+      }
+    });
+
     // Create timeline bars for each metric with matching legend colors
     availableMetrics.forEach((metric) => {
       const time = metrics[metric.key];
