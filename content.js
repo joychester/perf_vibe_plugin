@@ -297,6 +297,12 @@
           <button id="view-waterfall" class="view-waterfall-btn" disabled><span class="collecting-spinner"></span>Collecting...</button>
         </div>
       </div>
+      <div class="export-section">
+        <button id="download-report" class="download-report-btn" disabled>
+          <span class="collecting-spinner"></span>
+          Collecting...
+        </button>
+      </div>
     </div>
     <div class="settings-overlay" id="settings-overlay" style="display: none;">
       <div class="settings-panel">
@@ -666,6 +672,12 @@
     const viewWaterfallBtn = document.getElementById('view-waterfall');
     if (viewWaterfallBtn) {
       viewWaterfallBtn.addEventListener('click', showWaterfallOverlay);
+    }
+
+    // Download Report button
+    const downloadReportBtn = document.getElementById('download-report');
+    if (downloadReportBtn) {
+      downloadReportBtn.addEventListener('click', downloadReport);
     }
 
     // Make widget draggable
@@ -3239,6 +3251,918 @@
     `;
   }
 
+  // Download Report functionality
+  function downloadReport() {
+    const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
+    const modeLabel = currentMode === 'page-load' ? 'Page Load' : 'Navigation';
+    const hostname = window.location.hostname || 'localhost';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `perf-report-${hostname}-${timestamp}.html`;
+
+    // Get resource data
+    const resourceData = getResourceData();
+    let resources = resourceData.resources ? [...resourceData.resources] : [];
+
+    // Add navigation entry
+    const navigationEntries = performance.getEntriesByType('navigation');
+    if (navigationEntries.length > 0) {
+      const nav = navigationEntries[0];
+      resources.unshift({
+        name: nav.name || window.location.href,
+        initiatorType: 'navigation',
+        startTime: 0,
+        fetchStart: nav.fetchStart || 0,
+        responseEnd: nav.responseEnd || nav.loadEventEnd || 0,
+        duration: nav.responseEnd || nav.loadEventEnd || 0,
+        decodedBodySize: nav.decodedBodySize || 0,
+        transferSize: nav.transferSize || 0
+      });
+    }
+
+    // Filter resources within tracking window
+    resources = resources.filter(r => (r.fetchStart || r.startTime) <= MAX_METRIC_DURATION);
+    resources.sort((a, b) => (a.fetchStart || a.startTime) - (b.fetchStart || b.startTime));
+
+    // Generate HTML report
+    const html = generateHTMLReport({
+      metrics,
+      modeLabel,
+      hostname,
+      url: window.location.href,
+      timestamp: new Date().toLocaleString(),
+      resources,
+      customMarks,
+      customMeasures,
+      changeHistory
+    });
+
+    // Download the file
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function generateHTMLReport(data) {
+    const { metrics, modeLabel, hostname, url, timestamp, resources, customMarks, customMeasures, changeHistory } = data;
+
+    // Calculate max time for timeline
+    const timelineMetrics = [
+      { key: 'ttfb', label: 'TTFB' },
+      { key: 'first-paint', label: 'First Paint' },
+      { key: 'fcp', label: 'FCP' },
+      { key: 'dom-ready', label: 'DOM Ready' },
+      { key: 'lcp', label: 'LCP' },
+      { key: 'load-complete', label: 'Load Complete' },
+      { key: 'tti', label: 'TTI' },
+      { key: 'last-pixel-change', label: 'Last Pixel Change' }
+    ];
+
+    const availableMetrics = timelineMetrics.filter(m =>
+      metrics[m.key] !== null && metrics[m.key] !== undefined && !isNaN(metrics[m.key])
+    );
+
+    const maxMetricTime = availableMetrics.length > 0
+      ? Math.max(...availableMetrics.map(m => metrics[m.key]))
+      : 0;
+    const maxResourceTime = resources.length > 0
+      ? Math.max(...resources.map(r => r.responseEnd || (r.startTime + r.duration) || 0))
+      : 0;
+    const maxTime = Math.max(maxMetricTime, maxResourceTime, 1000) * 1.1;
+
+    // Generate metrics HTML
+    const metricsHtml = generateMetricsHTML(metrics);
+
+    // Generate timeline HTML
+    const timelineHtml = generateTimelineHTML(metrics, availableMetrics, maxTime, customMarks, customMeasures, changeHistory);
+
+    // Generate waterfall HTML
+    const waterfallHtml = generateWaterfallHTML(resources, maxTime);
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Performance Report - ${hostname}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+    .report-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .report-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px 32px;
+    }
+    .report-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .report-meta {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    .report-meta span { margin-right: 20px; }
+    .mode-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .report-content { padding: 32px; }
+    .section {
+      margin-bottom: 32px;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Metrics Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .metric-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+    .metric-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .metric-label {
+      font-size: 11px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+    .metric-value.good { color: #10b981; }
+    .metric-value.needs-improvement { color: #f59e0b; }
+    .metric-value.poor { color: #ef4444; }
+    .metric-value.neutral { color: #6b7280; }
+
+    /* Timeline */
+    .timeline-container {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+    }
+    .timeline-chart {
+      position: relative;
+      height: 120px;
+      margin-bottom: 30px;
+    }
+    .timeline-zones {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 24px;
+      display: flex;
+    }
+    .zone {
+      height: 100%;
+      opacity: 0.15;
+    }
+    .zone-good { background: #10b981; }
+    .zone-warning { background: #f59e0b; }
+    .zone-poor { background: #ef4444; }
+    .timeline-bars {
+      position: absolute;
+      top: 10px;
+      left: 0;
+      right: 0;
+      bottom: 24px;
+    }
+    .timeline-bar {
+      position: absolute;
+      bottom: 0;
+      width: 4px;
+      border-radius: 2px;
+      transform: translateX(-50%);
+    }
+    .timeline-marker {
+      position: absolute;
+      top: -24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: inherit;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .timeline-x-axis {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 24px;
+      border-top: 1px solid #d1d5db;
+    }
+    .x-axis-label {
+      position: absolute;
+      top: 6px;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: #6b7280;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+
+    /* Custom Measures (time range overlays) */
+    .custom-measure {
+      position: absolute;
+      top: 0;
+      height: 16px;
+      border-radius: 2px;
+      z-index: 5;
+    }
+    .custom-measure-label {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-size: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: calc(100% - 8px);
+    }
+
+    /* Custom Marks (pin markers) */
+    .custom-mark {
+      position: absolute;
+      top: 0;
+      z-index: 6;
+      transform: translateX(-50%);
+    }
+    .custom-mark-pin {
+      width: 10px;
+      height: 10px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      margin-left: -5px;
+    }
+    .custom-mark-line {
+      position: absolute;
+      top: 10px;
+      left: 0;
+      width: 2px;
+      height: 70px;
+      opacity: 0.5;
+      transform: translateX(-50%);
+    }
+    .custom-mark-label {
+      position: absolute;
+      top: 12px;
+      left: 6px;
+      font-size: 8px;
+      font-weight: 600;
+      color: #374151;
+      white-space: nowrap;
+      background: rgba(255,255,255,0.9);
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+
+    /* Visual Change Bars */
+    .visual-change-bar {
+      position: absolute;
+      bottom: 24px;
+      width: 4px;
+      height: 28px;
+      border-radius: 2px;
+      transform: translateX(-50%);
+      z-index: 3;
+    }
+    .visual-change-count {
+      position: absolute;
+      top: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #06b6d4;
+      color: white;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 8px;
+      min-width: 14px;
+      text-align: center;
+    }
+    .visual-change-eye {
+      position: absolute;
+      top: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+    }
+
+    /* Custom metrics legend */
+    .custom-metrics-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed #e5e7eb;
+    }
+    .custom-metrics-legend .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #374151;
+    }
+    .custom-metrics-legend .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    /* Waterfall */
+    .waterfall-container {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .waterfall-header-row {
+      display: grid;
+      grid-template-columns: 200px 100px 80px 1fr 70px;
+      gap: 8px;
+      padding: 10px 16px;
+      background: #e5e7eb;
+      font-size: 10px;
+      font-weight: 600;
+      color: #374151;
+      text-transform: uppercase;
+    }
+    .waterfall-row {
+      display: grid;
+      grid-template-columns: 200px 100px 80px 1fr 70px;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 11px;
+      align-items: center;
+    }
+    .waterfall-row:hover {
+      background: #f3f4f6;
+    }
+    .waterfall-row:last-child {
+      border-bottom: none;
+    }
+    .resource-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #374151;
+    }
+    .resource-type {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      font-weight: 600;
+      text-align: center;
+    }
+    .type-doc { background: #dbeafe; color: #1d4ed8; }
+    .type-js { background: #fef3c7; color: #d97706; }
+    .type-css { background: #d1fae5; color: #059669; }
+    .type-img { background: #fce7f3; color: #db2777; }
+    .type-font { background: #e0e7ff; color: #4f46e5; }
+    .type-other { background: #f3f4f6; color: #6b7280; }
+    .resource-size {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 10px;
+      color: #6b7280;
+    }
+    .waterfall-bar-container {
+      position: relative;
+      height: 16px;
+      background: #e5e7eb;
+      border-radius: 2px;
+    }
+    .waterfall-bar {
+      position: absolute;
+      height: 100%;
+      border-radius: 2px;
+      min-width: 2px;
+    }
+    .bar-doc { background: #3b82f6; }
+    .bar-js { background: #f59e0b; }
+    .bar-css { background: #10b981; }
+    .bar-img { background: #ec4899; }
+    .bar-font { background: #6366f1; }
+    .bar-other { background: #9ca3af; }
+    .resource-duration {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 10px;
+      color: #6b7280;
+      text-align: right;
+    }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: white;
+      border-radius: 6px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    /* Summary */
+    .summary-row {
+      display: flex;
+      gap: 24px;
+      padding: 16px;
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+      font-size: 12px;
+    }
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .summary-label { color: #6b7280; }
+    .summary-value { font-weight: 600; color: #374151; }
+
+    /* Footer */
+    .report-footer {
+      padding: 16px 32px;
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: center;
+    }
+
+    /* Timeline zones legend */
+    .zones-legend {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+      font-size: 10px;
+      color: #6b7280;
+    }
+    .zones-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .zones-legend-color {
+      width: 16px;
+      height: 8px;
+      border-radius: 2px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="report-header">
+      <div class="report-title">
+        ⚡ Performance Report
+        <span class="mode-badge">${modeLabel}</span>
+      </div>
+      <div class="report-meta">
+        <span>📍 ${url}</span>
+        <span>🕐 ${timestamp}</span>
+      </div>
+    </div>
+
+    <div class="report-content">
+      <!-- Metrics Section -->
+      <div class="section">
+        <div class="section-title">📊 Performance Metrics</div>
+        ${metricsHtml}
+      </div>
+
+      <!-- Timeline Section -->
+      <div class="section">
+        <div class="section-title">📈 Loading Timeline</div>
+        ${timelineHtml}
+      </div>
+
+      <!-- Waterfall Section -->
+      <div class="section">
+        <div class="section-title">🌊 Resource Waterfall</div>
+        ${waterfallHtml}
+      </div>
+    </div>
+
+    <div class="report-footer">
+      Generated by perf-vibe • ${timestamp}
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  function generateMetricsHTML(metrics) {
+    const metricDefs = [
+      { key: 'ttfb', label: 'Time to First Byte', thresholds: [800, 1800] },
+      { key: 'first-paint', label: 'First Paint', thresholds: [1000, 2500] },
+      { key: 'fcp', label: 'First Contentful Paint', thresholds: [1800, 3000] },
+      { key: 'lcp', label: 'Largest Contentful Paint', thresholds: [2500, 4000] },
+      { key: 'dom-ready', label: 'DOM Ready', thresholds: [2500, 4000] },
+      { key: 'load-complete', label: 'Load Complete', thresholds: [3000, 5000] },
+      { key: 'tti', label: 'Time to Interactive', thresholds: [3800, 7300] },
+      { key: 'tbt', label: 'Total Blocking Time', thresholds: [200, 600] },
+      { key: 'cls', label: 'Cumulative Layout Shift', thresholds: [0.1, 0.25], isScore: true },
+      { key: 'inp', label: 'Interaction to Next Paint', thresholds: [200, 500] },
+      { key: 'dom-size', label: 'DOM Size', thresholds: [800, 1400], isCount: true },
+      { key: 'last-pixel-change', label: 'Last Pixel Change', thresholds: [2500, 4000] }
+    ];
+
+    let html = '<div class="metrics-grid">';
+
+    metricDefs.forEach(def => {
+      const value = metrics[def.key];
+      if (value === null || value === undefined || isNaN(value)) return;
+
+      let rating = 'neutral';
+      if (def.thresholds) {
+        if (value <= def.thresholds[0]) rating = 'good';
+        else if (value <= def.thresholds[1]) rating = 'needs-improvement';
+        else rating = 'poor';
+      }
+
+      let displayValue;
+      if (def.isScore) {
+        displayValue = value.toFixed(3);
+      } else if (def.isCount) {
+        displayValue = value.toLocaleString();
+      } else {
+        displayValue = formatTime(value);
+      }
+
+      html += `
+        <div class="metric-card">
+          <div class="metric-label">${def.label}</div>
+          <div class="metric-value ${rating}">${displayValue}</div>
+        </div>
+      `;
+    });
+
+    html += '</div>';
+    return html;
+  }
+
+  function generateTimelineHTML(metrics, availableMetrics, maxTime, customMarks, customMeasures, changeHistory) {
+    // Calculate zone widths
+    const zone1End = Math.min(2500 / maxTime * 100, 100);
+    const zone2End = Math.min(4500 / maxTime * 100, 100);
+    const zone3End = Math.min(8000 / maxTime * 100, 100);
+
+    let zonesHtml = '<div class="timeline-zones">';
+    if (zone1End > 0) {
+      zonesHtml += `<div class="zone zone-good" style="width: ${zone1End}%"></div>`;
+    }
+    if (zone2End > zone1End) {
+      zonesHtml += `<div class="zone zone-warning" style="width: ${zone2End - zone1End}%"></div>`;
+    }
+    if (zone3End > zone2End) {
+      zonesHtml += `<div class="zone zone-poor" style="width: ${zone3End - zone2End}%"></div>`;
+    }
+    zonesHtml += '</div>';
+
+    // Generate visual changes (grouped by similar times)
+    let visualChangesHtml = '';
+    const visualChangeColor = '#06b6d4'; // Cyan - same as Last Pixel Change
+    const TIME_GROUP_THRESHOLD = 50; // Group changes within 50ms
+
+    if (changeHistory && changeHistory.length > 0) {
+      // Group visual changes by similar timestamps
+      const groupedChanges = [];
+      const sortedChanges = [...changeHistory].sort((a, b) => a.timestamp - b.timestamp);
+
+      sortedChanges.forEach(change => {
+        if (change.timestamp > maxTime) return;
+
+        const existingGroup = groupedChanges.find(g =>
+          Math.abs(g.timestamp - change.timestamp) <= TIME_GROUP_THRESHOLD
+        );
+
+        if (existingGroup) {
+          existingGroup.count++;
+          existingGroup.changes.push(change);
+          existingGroup.timestamp = existingGroup.changes.reduce((sum, c) => sum + c.timestamp, 0) / existingGroup.changes.length;
+        } else {
+          groupedChanges.push({
+            timestamp: change.timestamp,
+            count: 1,
+            changes: [change]
+          });
+        }
+      });
+
+      // Get LPC time for eye icon logic
+      const lpcTime = metrics['last-pixel-change'];
+      const EYE_THRESHOLD = 500;
+
+      groupedChanges.forEach((group, index) => {
+        const position = (group.timestamp / maxTime) * 100;
+        const opacity = Math.min(0.4 + (group.count * 0.1), 0.9);
+        const changeTypes = group.changes.map(c => c.type);
+        const uniqueTypes = [...new Set(changeTypes)];
+        const typesSummary = uniqueTypes.join(', ');
+
+        // Check if should show eye icon
+        let hasChangeWithin500ms = false;
+        for (let i = index + 1; i < groupedChanges.length; i++) {
+          if (groupedChanges[i].timestamp - group.timestamp <= EYE_THRESHOLD) {
+            hasChangeWithin500ms = true;
+            break;
+          }
+        }
+        if (!hasChangeWithin500ms && lpcTime !== null && lpcTime !== undefined) {
+          if (lpcTime > group.timestamp && lpcTime - group.timestamp <= EYE_THRESHOLD) {
+            hasChangeWithin500ms = true;
+          }
+        }
+
+        const eyeIcon = !hasChangeWithin500ms ? '<span class="visual-change-eye">👁</span>' : '';
+        const countBadge = group.count > 1 ? `<span class="visual-change-count">${group.count}</span>` : '';
+
+        visualChangesHtml += `
+          <div class="visual-change-bar" style="left: ${position}%; opacity: ${opacity}; background: ${visualChangeColor};" title="Visual Changes: ${group.count} change${group.count > 1 ? 's' : ''} at ${formatTime(group.timestamp)} - Types: ${typesSummary}">
+            ${countBadge}
+            ${eyeIcon}
+          </div>
+        `;
+      });
+    }
+
+    // Generate custom measures (time range overlays)
+    let measuresHtml = '';
+    const measureColors = ['rgba(139, 92, 246, 0.3)', 'rgba(34, 197, 94, 0.3)', 'rgba(249, 115, 22, 0.3)', 'rgba(236, 72, 153, 0.3)'];
+    const measureBorderColors = ['#8b5cf6', '#22c55e', '#f97316', '#ec4899'];
+
+    if (customMeasures && customMeasures.length > 0) {
+      customMeasures.forEach((measure, index) => {
+        const startPos = (measure.startTime / maxTime) * 100;
+        const width = Math.max((measure.duration / maxTime) * 100, 1);
+        const color = measureColors[index % measureColors.length];
+        const borderColor = measureBorderColors[index % measureBorderColors.length];
+
+        measuresHtml += `
+          <div class="custom-measure" style="left: ${startPos}%; width: ${width}%; background: ${color}; border-top: 3px solid ${borderColor};" title="${measure.name}: ${formatTime(measure.startTime)} → ${formatTime(measure.startTime + measure.duration)} (${formatTime(measure.duration)})">
+            <span class="custom-measure-label" style="color: ${borderColor};">${measure.name}</span>
+          </div>
+        `;
+      });
+    }
+
+    // Generate custom marks (pin markers)
+    let marksHtml = '';
+    const markColors = ['#8b5cf6', '#22c55e', '#f97316', '#ec4899', '#06b6d4'];
+
+    if (customMarks && customMarks.length > 0) {
+      customMarks.forEach((mark, index) => {
+        const position = (mark.timestamp / maxTime) * 100;
+        const color = markColors[index % markColors.length];
+
+        marksHtml += `
+          <div class="custom-mark" style="left: ${position}%;" title="${mark.name}: ${formatTime(mark.timestamp)}">
+            <div class="custom-mark-pin" style="background: ${color};"></div>
+            <div class="custom-mark-line" style="background: ${color};"></div>
+            <span class="custom-mark-label">${mark.name}</span>
+          </div>
+        `;
+      });
+    }
+
+    // Generate bars
+    let barsHtml = '<div class="timeline-bars">';
+    const colors = {
+      'ttfb': '#a855f7',
+      'first-paint': '#8b5cf6',
+      'fcp': '#3b82f6',
+      'dom-ready': '#22c55e',
+      'lcp': '#f59e0b',
+      'load-complete': '#ef4444',
+      'tti': '#6366f1',
+      'last-pixel-change': '#06b6d4'
+    };
+
+    availableMetrics.forEach(m => {
+      const value = metrics[m.key];
+      const position = (value / maxTime) * 100;
+      const color = colors[m.key] || '#6b7280';
+      const height = m.key === 'last-pixel-change' ? '30px' : '50px';
+
+      barsHtml += `
+        <div class="timeline-bar" style="left: ${position}%; height: ${height}; background: ${color};">
+          <div class="timeline-marker" style="background: ${color};">${m.label}</div>
+        </div>
+      `;
+    });
+    barsHtml += '</div>';
+
+    // Generate x-axis
+    let xAxisHtml = '<div class="timeline-x-axis">';
+    const tickCount = 5;
+    for (let i = 0; i <= tickCount; i++) {
+      const time = (i / tickCount) * maxTime;
+      const position = (i / tickCount) * 100;
+      xAxisHtml += `<div class="x-axis-label" style="left: ${position}%">${formatTime(time)}</div>`;
+    }
+    xAxisHtml += '</div>';
+
+    // Build custom metrics legend if there are any
+    let customLegendHtml = '';
+    if ((customMarks && customMarks.length > 0) || (customMeasures && customMeasures.length > 0)) {
+      customLegendHtml = '<div class="custom-metrics-legend">';
+      if (customMeasures && customMeasures.length > 0) {
+        customMeasures.forEach((measure, index) => {
+          const color = measureBorderColors[index % measureBorderColors.length];
+          customLegendHtml += `<div class="legend-item"><div class="legend-color" style="background: ${color};"></div>${measure.name} (${formatTime(measure.duration)})</div>`;
+        });
+      }
+      if (customMarks && customMarks.length > 0) {
+        customMarks.forEach((mark, index) => {
+          const color = markColors[index % markColors.length];
+          customLegendHtml += `<div class="legend-item"><div class="legend-color" style="background: ${color}; border-radius: 50%;"></div>${mark.name} (${formatTime(mark.timestamp)})</div>`;
+        });
+      }
+      customLegendHtml += '</div>';
+    }
+
+    return `
+      <div class="timeline-container">
+        <div class="timeline-chart">
+          ${zonesHtml}
+          ${measuresHtml}
+          ${marksHtml}
+          ${visualChangesHtml}
+          ${barsHtml}
+          ${xAxisHtml}
+        </div>
+        <div class="zones-legend">
+          <div class="zones-legend-item">
+            <div class="zones-legend-color" style="background: #10b981;"></div>
+            Good (0-2.5s)
+          </div>
+          <div class="zones-legend-item">
+            <div class="zones-legend-color" style="background: #f59e0b;"></div>
+            Needs Improvement (2.5-4.5s)
+          </div>
+          <div class="zones-legend-item">
+            <div class="zones-legend-color" style="background: #ef4444;"></div>
+            Poor (4.5-8s)
+          </div>
+        </div>
+        ${customLegendHtml}
+      </div>
+    `;
+  }
+
+  function generateWaterfallHTML(resources, maxTime) {
+    if (resources.length === 0) {
+      return '<div class="waterfall-container"><div style="padding: 20px; text-align: center; color: #9ca3af;">No resources collected</div></div>';
+    }
+
+    const getResourceType = (resource) => {
+      const type = resource.initiatorType || '';
+      if (type === 'navigation') return 'doc';
+      if (type === 'script' || resource.name?.match(/\.js(\?|$)/i)) return 'js';
+      if (type === 'css' || type === 'link' || resource.name?.match(/\.css(\?|$)/i)) return 'css';
+      if (type === 'img' || type === 'image' || resource.name?.match(/\.(png|jpg|jpeg|gif|webp|svg|ico)(\?|$)/i)) return 'img';
+      if (type === 'font' || resource.name?.match(/\.(woff2?|ttf|otf|eot)(\?|$)/i)) return 'font';
+      return 'other';
+    };
+
+    const getResourceName = (resource) => {
+      try {
+        const url = new URL(resource.name);
+        return url.pathname.split('/').pop() || url.pathname || resource.name;
+      } catch {
+        return resource.name?.split('/').pop() || resource.name || 'Unknown';
+      }
+    };
+
+    let html = `
+      <div class="waterfall-container">
+        <div class="legend">
+          <div class="legend-item"><div class="legend-color bar-doc"></div> Document</div>
+          <div class="legend-item"><div class="legend-color bar-js"></div> JavaScript</div>
+          <div class="legend-item"><div class="legend-color bar-css"></div> CSS</div>
+          <div class="legend-item"><div class="legend-color bar-img"></div> Images</div>
+          <div class="legend-item"><div class="legend-color bar-font"></div> Fonts</div>
+          <div class="legend-item"><div class="legend-color bar-other"></div> Other</div>
+        </div>
+        <div class="waterfall-header-row">
+          <div>Resource</div>
+          <div>Type</div>
+          <div>Size</div>
+          <div>Timeline</div>
+          <div>Duration</div>
+        </div>
+    `;
+
+    resources.forEach(resource => {
+      const type = getResourceType(resource);
+      const name = getResourceName(resource);
+      const startTime = resource.fetchStart || resource.startTime || 0;
+      const endTime = resource.responseEnd || (resource.startTime + resource.duration) || startTime;
+      const duration = endTime - startTime;
+      const size = resource.decodedBodySize || 0;
+
+      const barStart = (startTime / maxTime) * 100;
+      const barWidth = Math.max((duration / maxTime) * 100, 0.5);
+
+      html += `
+        <div class="waterfall-row">
+          <div class="resource-name" title="${resource.name}">${name}</div>
+          <div><span class="resource-type type-${type}">${type}</span></div>
+          <div class="resource-size">${formatBytes(size)}</div>
+          <div class="waterfall-bar-container">
+            <div class="waterfall-bar bar-${type}" style="left: ${barStart}%; width: ${barWidth}%;"></div>
+          </div>
+          <div class="resource-duration">${formatTime(duration)}</div>
+        </div>
+      `;
+    });
+
+    html += `
+        <div class="summary-row">
+          <div class="summary-item">
+            <span class="summary-label">Total Resources:</span>
+            <span class="summary-value">${resources.length}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Total Size:</span>
+            <span class="summary-value">${formatBytes(resources.reduce((sum, r) => sum + (r.decodedBodySize || 0), 0))}</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
   function showWaterfallOverlay() {
     // Remove existing overlay
     if (waterfallOverlay) {
@@ -3552,6 +4476,20 @@
       if (waterfallBtn) {
         waterfallBtn.disabled = false;
         waterfallBtn.textContent = 'View Waterfall';
+      }
+
+      // Enable the Download Report button now that collection is complete
+      const downloadBtn = widget.querySelector('#download-report');
+      if (downloadBtn) {
+        downloadBtn.disabled = false;
+        downloadBtn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Download Report
+        `;
       }
     }, MAX_METRIC_DURATION);
   }
