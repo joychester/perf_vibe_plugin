@@ -3643,6 +3643,36 @@
       color: #374151;
       text-transform: uppercase;
     }
+    .timeline-header {
+      position: relative;
+      height: 100%;
+    }
+    .time-scale {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-bottom: 1px solid #d1d5db;
+    }
+    .time-tick {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 9px;
+      font-weight: 500;
+      color: #6b7280;
+      font-family: 'Monaco', 'Menlo', monospace;
+      text-transform: none;
+    }
+    .time-tick::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1px;
+      height: 6px;
+      background: #9ca3af;
+    }
     .waterfall-row {
       display: grid;
       grid-template-columns: 200px 100px 80px 1fr 70px;
@@ -3686,8 +3716,11 @@
     .waterfall-bar-container {
       position: relative;
       height: 16px;
-      background: #e5e7eb;
+      background: #f3f4f6;
       border-radius: 2px;
+      background-image: linear-gradient(to right, #d1d5db 1px, transparent 1px);
+      background-size: 20% 100%;
+      background-position: 0 0;
     }
     .waterfall-bar {
       position: absolute;
@@ -4103,6 +4136,15 @@
       }
     };
 
+    // Generate time scale markers
+    const tickCount = 5;
+    let timeScaleHtml = '';
+    for (let i = 0; i <= tickCount; i++) {
+      const time = (i / tickCount) * maxTime;
+      const position = (i / tickCount) * 100;
+      timeScaleHtml += `<span class="time-tick" style="left: ${position}%;">${formatTime(time)}</span>`;
+    }
+
     let html = `
       <div class="waterfall-container">
         <div class="legend">
@@ -4117,7 +4159,9 @@
           <div>Resource</div>
           <div>Type</div>
           <div>Size</div>
-          <div>Timeline</div>
+          <div class="timeline-header">
+            <div class="time-scale">${timeScaleHtml}</div>
+          </div>
           <div>Duration</div>
         </div>
     `;
