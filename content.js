@@ -1496,8 +1496,7 @@
       { key: 'dom-ready', label: 'DOM', order: 3 },
       { key: 'lcp', label: 'LCP', order: 4 },
       { key: 'load-complete', label: 'Load', order: 5 },
-      { key: 'tti', label: 'TTI', order: 6 },
-      { key: 'last-pixel-change', label: 'LPC', order: 7 }
+      { key: 'last-pixel-change', label: 'LPC', order: 6 }
     ];
 
     // Filter out metrics that don't have values (allow 0 values)
@@ -3319,7 +3318,6 @@
       { key: 'dom-ready', label: 'DOM Ready' },
       { key: 'lcp', label: 'LCP' },
       { key: 'load-complete', label: 'Load Complete' },
-      { key: 'tti', label: 'TTI' },
       { key: 'last-pixel-change', label: 'Last Pixel Change' }
     ];
 
@@ -4036,7 +4034,6 @@
       'dom-ready': '#22c55e',
       'lcp': '#f59e0b',
       'load-complete': '#ef4444',
-      'tti': '#6366f1',
       'last-pixel-change': '#06b6d4'
     };
 
