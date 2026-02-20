@@ -189,7 +189,11 @@
     <div class="widget-content" id="widget-content">
       <div class="timeline-section">
         <div class="timeline-header">
-          <span class="timeline-title">Loading Timeline</span>
+          <span class="timeline-title">Timeline Grade:</span>
+          <span class="grade-calculating" id="grade-calculating" title="Calculating performance grade...">
+            <span class="calculating-spinner"></span>
+          </span>
+          <span class="performance-grade" id="performance-grade" style="display: none;"></span>
           <div class="timeline-controls">
             <span class="zoom-level" id="zoom-level">1x</span>
             <button id="zoom-reset" class="zoom-btn" title="Reset zoom">⟲</button>
@@ -1467,6 +1471,57 @@
     
     // Update timeline when metrics change
     renderTimeline();
+  }
+
+  // Calculate performance grade based on timeline metrics
+  function calculatePerformanceGrade(metrics) {
+    // Define timeline metrics to evaluate
+    const timelineMetrics = [
+      'ttfb',
+      'first-paint',
+      'fcp',
+      'dom-ready',
+      'lcp',
+      'load-complete',
+      'last-pixel-change'
+    ];
+
+    // Filter to only metrics that have values
+    const availableMetrics = timelineMetrics.filter(key =>
+      metrics[key] !== null && metrics[key] !== undefined && !isNaN(metrics[key])
+    );
+
+    if (availableMetrics.length === 0) {
+      return { grade: 'N/A', color: '#9ca3af', description: 'No metrics available' };
+    }
+
+    // Count metrics in each zone
+    const greenCount = availableMetrics.filter(key => metrics[key] <= 2500).length;
+    const yellowCount = availableMetrics.filter(key => metrics[key] > 2500 && metrics[key] <= 4500).length;
+    const redCount = availableMetrics.filter(key => metrics[key] > 4500).length;
+    const total = availableMetrics.length;
+
+    const greenPercent = (greenCount / total) * 100;
+    const withinYellowPercent = ((greenCount + yellowCount) / total) * 100;
+
+    // Apply grading criteria
+    // A+: All metrics ≤ 2.5s
+    if (greenPercent === 100) {
+      return { grade: 'A+', color: '#10b981', description: 'Excellent - All metrics in green zone' };
+    }
+
+    // A: ≥80% ≤ 2.5s, rest ≤ 4.5s (no red zone)
+    if (greenPercent >= 80 && redCount === 0) {
+      return { grade: 'A', color: '#22c55e', description: 'Very Good - Mostly green, no poor metrics' };
+    }
+
+    // B: ≥70% ≤ 4.5s (limited red zone)
+    if (withinYellowPercent >= 70) {
+      return { grade: 'B', color: '#f59e0b', description: 'Good - Most metrics within acceptable range' };
+    }
+
+    // C: <70% ≤ 4.5s (significant red zone)
+    return { grade: 'C', color: '#ef4444', description: 'Needs Improvement - Many poor metrics' };
   }
 
   // Render timeline chart with zoom and pan support
@@ -3282,12 +3337,16 @@
     resources = resources.filter(r => (r.fetchStart || r.startTime) <= MAX_METRIC_DURATION);
     resources.sort((a, b) => (a.fetchStart || a.startTime) - (b.fetchStart || b.startTime));
 
+    // Calculate performance grade
+    const gradeResult = calculatePerformanceGrade(metrics);
+
     // Generate HTML report
     const html = generateHTMLReport({
       metrics,
       modeLabel,
       hostname,
       url: window.location.href,
+      grade: gradeResult,
       timestamp: new Date().toLocaleString(),
       resources,
       customMarks,
@@ -3308,7 +3367,7 @@
   }
 
   function generateHTMLReport(data) {
-    const { metrics, modeLabel, hostname, url, timestamp, resources, customMarks, customMeasures, changeHistory } = data;
+    const { metrics, modeLabel, hostname, url, timestamp, resources, customMarks, customMeasures, changeHistory, grade } = data;
 
     // Calculate max time for timeline
     const timelineMetrics = [
@@ -3390,6 +3449,17 @@
       border-radius: 20px;
       font-size: 12px;
       font-weight: 600;
+    }
+    .grade-badge {
+      display: inline-block;
+      background: #10b981;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 700;
+      margin-left: 10px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     }
     .report-content { padding: 32px; }
     .section {
@@ -3816,6 +3886,7 @@
       <div class="report-title">
         ⚡ Performance Report
         <span class="mode-badge">${modeLabel}</span>
+        ${grade && grade.grade !== 'N/A' ? `<span class="grade-badge" style="background-color: ${grade.color};" title="${grade.description}">Grade: ${grade.grade}</span>` : ''}
       </div>
       <div class="report-meta">
         <span>📍 ${url}</span>
@@ -4531,6 +4602,25 @@
           </svg>
           Download Report
         `;
+      }
+
+      // Calculate and display performance grade now that all metrics are collected
+      const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
+      const gradeResult = calculatePerformanceGrade(metrics);
+
+      // Hide calculating indicator
+      const calculatingElement = widget.querySelector('#grade-calculating');
+      if (calculatingElement) {
+        calculatingElement.style.display = 'none';
+      }
+
+      // Show grade
+      const gradeElement = widget.querySelector('#performance-grade');
+      if (gradeElement && gradeResult.grade !== 'N/A') {
+        gradeElement.textContent = gradeResult.grade;
+        gradeElement.style.backgroundColor = gradeResult.color;
+        gradeElement.title = gradeResult.description;
+        gradeElement.style.display = 'inline-flex';
       }
     }, MAX_METRIC_DURATION);
   }
