@@ -610,9 +610,10 @@
           toggleBtn.textContent = '▼';
         }
       }
-      // Force timeline to render
+      // Force timeline to render and update grade
       setTimeout(() => {
         renderTimeline();
+        updateGradeDisplay();
       }, 50);
     });
 
@@ -1522,6 +1523,33 @@
 
     // C: <70% ≤ 4.5s (significant red zone)
     return { grade: 'C', color: '#ef4444', description: 'Needs Improvement - Many poor metrics' };
+  }
+
+  // Update performance grade display
+  function updateGradeDisplay() {
+    const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
+    const gradeResult = calculatePerformanceGrade(metrics);
+
+    // Hide calculating indicator
+    const calculatingElement = widget.querySelector('#grade-calculating');
+    if (calculatingElement) {
+      calculatingElement.style.display = 'none';
+    }
+
+    // Show grade
+    const gradeElement = widget.querySelector('#performance-grade');
+    if (gradeElement && gradeResult.grade !== 'N/A') {
+      gradeElement.textContent = gradeResult.grade;
+      gradeElement.style.backgroundColor = gradeResult.color;
+      gradeElement.title = gradeResult.description;
+      gradeElement.style.display = 'inline-flex';
+    } else if (gradeElement && gradeResult.grade === 'N/A') {
+      // If no metrics available, show calculating indicator again
+      gradeElement.style.display = 'none';
+      if (calculatingElement) {
+        calculatingElement.style.display = 'inline-flex';
+      }
+    }
   }
 
   // Render timeline chart with zoom and pan support
@@ -2909,6 +2937,9 @@
       renderTimeline();
     }
 
+    // Reset grade display to show "Calculating..." for new navigation
+    updateGradeDisplay();
+
     // Update DOM size after navigation settles
     setTimeout(() => {
       updateDomSize(true);
@@ -3051,7 +3082,12 @@
       observer.disconnect();
       isTrackingNavigation = false;
     }, 10000);
-    
+
+    // Calculate and display final grade after metric collection period
+    setTimeout(() => {
+      updateGradeDisplay();
+    }, MAX_METRIC_DURATION);
+
     // Start tracking last pixel change for navigation
     trackLastPixelChange(true);
   }
@@ -4605,23 +4641,7 @@
       }
 
       // Calculate and display performance grade now that all metrics are collected
-      const metrics = currentMode === 'page-load' ? pageLoadMetrics : navigationMetrics;
-      const gradeResult = calculatePerformanceGrade(metrics);
-
-      // Hide calculating indicator
-      const calculatingElement = widget.querySelector('#grade-calculating');
-      if (calculatingElement) {
-        calculatingElement.style.display = 'none';
-      }
-
-      // Show grade
-      const gradeElement = widget.querySelector('#performance-grade');
-      if (gradeElement && gradeResult.grade !== 'N/A') {
-        gradeElement.textContent = gradeResult.grade;
-        gradeElement.style.backgroundColor = gradeResult.color;
-        gradeElement.title = gradeResult.description;
-        gradeElement.style.display = 'inline-flex';
-      }
+      updateGradeDisplay();
     }, MAX_METRIC_DURATION);
   }
 
