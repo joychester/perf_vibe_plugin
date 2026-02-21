@@ -1544,7 +1544,18 @@
     // Show grade
     const gradeElement = widget.querySelector('#performance-grade');
     if (gradeElement && gradeResult.grade !== 'N/A') {
-      gradeElement.textContent = gradeResult.grade;
+      // Add emojis for grades
+      let gradeText = gradeResult.grade;
+      if (gradeResult.grade === 'A+') {
+        gradeText = '😎 ' + gradeResult.grade;
+      } else if (gradeResult.grade === 'A') {
+        gradeText = '🙂 ' + gradeResult.grade;
+      } else if (gradeResult.grade === 'B') {
+        gradeText = '😐 ' + gradeResult.grade;
+      } else if (gradeResult.grade === 'C') {
+        gradeText = '😞 ' + gradeResult.grade;
+      }
+      gradeElement.textContent = gradeText;
       gradeElement.style.backgroundColor = gradeResult.color;
       gradeElement.title = gradeResult.description;
       gradeElement.style.display = 'inline-flex';
