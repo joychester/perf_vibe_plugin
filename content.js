@@ -1404,7 +1404,12 @@
   function updateModeDisplay() {
     const modeBadge = document.getElementById('mode-badge');
     const navCount = document.getElementById('nav-count');
-    
+
+    // Guard against null elements (widget may not be rendered yet)
+    if (!modeBadge || !navCount) {
+      return;
+    }
+
     if (currentMode === 'page-load') {
       modeBadge.textContent = 'Page Load';
       modeBadge.className = 'mode-badge page-load';
