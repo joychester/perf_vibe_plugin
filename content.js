@@ -1521,6 +1521,17 @@
       return { grade: 'A', color: '#22c55e', description: 'Very Good - Mostly green, no poor metrics' };
     }
 
+    // Special case: If key user-perceived metrics are all fast, upgrade B/C to A
+    // Check if DOM ready, Load Complete, and LCP are all ≤ 2.5s
+    const keyMetrics = ['dom-ready', 'load-complete', 'lcp'];
+    const allKeyMetricsFast = keyMetrics.every(key =>
+      metrics[key] !== null && metrics[key] !== undefined && !isNaN(metrics[key]) && metrics[key] <= 2500
+    );
+
+    if (allKeyMetricsFast) {
+      return { grade: 'A', color: '#22c55e', description: 'Very Good - Key metrics feel fast to users' };
+    }
+
     // B: ≥70% ≤ 4.5s (limited red zone)
     if (withinYellowPercent >= 70) {
       return { grade: 'B', color: '#f59e0b', description: 'Good - Most metrics within acceptable range' };
